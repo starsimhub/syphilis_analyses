@@ -13,6 +13,8 @@ from networks import StructuredSexual
 quick_run = False
 ss.options['multirng']=False
 
+figdir = 'figures'
+sc.path(figdir).mkdir(parents=True, exist_ok=True)
 
 def make_syph_sim(dt=1, n_agents=500):
     """ Make a sim with syphilis - used by several subsequent tests """
@@ -101,7 +103,7 @@ def plot_syph(sim):
     ax[3].set_title('New infections')
 
     fig.tight_layout()
-    plt.show()
+    plt.savefig(f"figures/syph.png", dpi=100)
     return
 
 
@@ -145,8 +147,6 @@ def plot_degree(sim):
 
     plt.savefig(f"figures/partner_degree.png", dpi=300)
 
-    plt.show()
-
     return
 
 
@@ -158,6 +158,8 @@ if __name__ == '__main__':
     plot_degree(sim)
     plot_mixing(sim)
     plot_syph(sim)
+
+    plt.show()
 
     # sim = sc.loadobj('sim.obj')
 

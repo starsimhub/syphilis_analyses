@@ -12,6 +12,8 @@ Overview:
 import starsim as ss
 import numpy as np
 import pandas as pd
+import scipy.optimize as spo
+import scipy.spatial as spsp
 
 
 class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
@@ -218,32 +220,27 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
         Match pairs by age
         """
 
-        # Find people eligible for a relationship
+        # Find females eligible and looking for a partnership
         f_active = self.active(ppl) & ppl.female
-        m_active = self.active(ppl) & ppl.male
         underpartnered = self.partners < self.concurrency
         f_eligible = f_active & underpartnered
-        m_eligible = m_active & underpartnered
         f_looking = self.pars.p_pair_form.filter(ss.true(f_eligible))  # To do: let p vary by age and with dt
 
         # Get mean age differences and desired ages
         age_gaps = self.pars.age_diffs.rvs(f_looking)   # Sample the age differences
         desired_ages = ppl.age[f_looking] + age_gaps    # Desired ages of the male partners
 
-        # Sort the females according to the desired age of their partners
-        desired_age_idx = np.argsort(desired_ages)  # Array positions for sorting the desired ages
-        p2 = desired_ages.uid[desired_age_idx]      # Female UIDs sorted by age of their desired partner
-        sorted_desired_ages = desired_ages[p2]      # Sorted desired ages
-
-        # Sort the males by age
+        # Males by age
+        m_active = self.active(ppl) & ppl.male
+        m_eligible = m_active & underpartnered
         m_ages = ppl.age[m_eligible]            # Ages of eligible males
-        m_age_sidx = np.argsort(m_ages)         # Array positions for sorting the ages of males
-        sorted_m_uids = m_ages.uid[m_age_sidx]  # Male UIDs sorted by age
-        sorted_m_ages = m_ages[sorted_m_uids]   # Sort male ages
 
-        # Get matches
-        match_inds = abs(sorted_desired_ages.values[:, None] - sorted_m_ages.values[None, :]).argmin(axis=-1)
-        p1 = sorted_m_uids[match_inds]
+        # Get matches using linear sum assignment
+        dist_mat = spsp.distance_matrix(m_ages.values[:,np.newaxis], desired_ages.values[:,np.newaxis])
+        ind_m, ind_f = spo.linear_sum_assignment(dist_mat)
+        p1 = m_ages.uid[ind_m]
+        p2 = desired_ages.uid[ind_f]
+        # Assess matches by age using: np.concatenate([m_ages[p1].values[:,np.newaxis], desired_ages[p2].values[:,np.newaxis]], axis=1)
 
         self.partners[p1] += 1
         self.partners[p2] += 1
