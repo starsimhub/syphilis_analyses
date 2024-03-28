@@ -2,38 +2,16 @@
 Define sexual network for syphilis.
 
 Overview:
-- Risk groups: agents are randomly assigned into one of 4 risk groups:
-    - F0 = women who get married and remain married to a single partner throughout their lifetime
-    - F1 = women who get married and then divorce or whose partner has a concurrent partner during their marriage
-    - F2 = women who never marry
-    - M0 = men who get married to a single partner and remain married throughout their lifetime
-    - M1 = men who get married and who divorce or who have a concurrent partner during their marriage
-    - M2 = men who never marry
-- Relationship types: short-term (ST), long-term (LT), commercial/sex work (SW)
-- Partner formation:
-    - all unpartnered agents look for a short-term relationships (?)
+- Risk groups: agents are randomly assigned into one of 3 main risk groups:
+    - 0 = marry and remain married to a single partner throughout their lifetime
+    - 1 = marry and then divorce or who have concurrent partner(s) during their marriage
+    - 2 = never marry
+- In addition, a proportion of each of the groups above engages in sex work
 """
 
 import starsim as ss
 import numpy as np
 import pandas as pd
-import sciris as sc
-
-
-class StableL0(ss.SexualNetwork):
-    """ Put people here once they've found each other """
-    def add_to_queue(self):
-        return
-
-
-class LayeredSexual:
-    def __init__(self, networks=None):
-        self.networks = networks
-        return
-
-    def update(self):
-        for nw in self.networks:
-            nw.update()
 
 
 class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
