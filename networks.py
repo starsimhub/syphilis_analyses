@@ -109,7 +109,7 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
         self.client = ss.State('client', bool, default=False)
         self.debut = ss.State('debut', float, default=0)
         self.participant = ss.State('participant', bool, default=True)
-        self.concurrency = ss.State('concurrency', int, default=0)
+        self.concurrency = ss.State('concurrency', int, default=1)
         self.partners = ss.State('partners', int, default=0)
         self.lifetime_partners = ss.State('lifetime_partners', int, default=0)
 
@@ -196,8 +196,8 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
             m_conc = self.pars[f'm{rg}_conc']
             f_uids = people.female & (self.risk_group == rg) & (people.age < upper_age)
             m_uids = people.male & (self.risk_group == rg) & (people.age < upper_age)
-            self.concurrency[f_uids] = f_conc.rvs(f_uids)+1
-            self.concurrency[m_uids] = m_conc.rvs(m_uids)+1
+            # self.concurrency[f_uids] = f_conc.rvs(f_uids)+1
+            # self.concurrency[m_uids] = m_conc.rvs(m_uids)+1
         return
 
     def set_sex_work(self, people, upper_age=None):
@@ -241,7 +241,10 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
         sorted_m_ages = m_ages[sorted_m_uids]   # Sort male ages
 
         # Get matches
-        match_inds = abs(sorted_desired_ages.values[:, None] - sorted_m_ages.values[None, :]).argmin(axis=-1)
+        try:
+            match_inds = abs(sorted_desired_ages.values[:, None] - sorted_m_ages.values[None, :]).argmin(axis=-1)
+        except:
+            import traceback; traceback.print_exc(); import pdb; pdb.set_trace()
         p1 = sorted_m_uids[match_inds]
 
         self.partners[p1] += 1
@@ -303,7 +306,7 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
         active_clients = self.active(ppl) & ppl.male & self.client
 
         # Find clients who will seek FSW
-        self.pars.sw_seeking_dist.kwds['p'] = self.pars.sw_seeking_rate * ppl.dt
+        self.pars.sw_seeking_dist.pars.p = self.pars.sw_seeking_rate * ppl.dt
         m_looking = self.pars.sw_seeking_dist.filter(ss.true(active_clients))
 
         # Replace this with choice
