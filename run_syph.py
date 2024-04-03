@@ -68,7 +68,7 @@ def plot_mixing(sim):
     fig.colorbar(h[3], ax=ax)
     ax.set_title('Age mixing')
     fig.tight_layout()
-    plt.savefig(f"figures/networks.png", dpi=100)
+    sc.savefig("figures/networks.png", dpi=100)
     return
 
 
@@ -143,7 +143,7 @@ def plot_degree(sim):
             stats += f"%>20: {np.count_nonzero(lp>=20)/total*100:.2f}\n"
             axes[ai, rg].text(1, 0.5, stats)
 
-    plt.savefig(f"figures/partner_degree.png", dpi=300)
+    sc.savefig("figures/partner_degree.png", dpi=300)
 
     plt.show()
 

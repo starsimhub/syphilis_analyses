@@ -185,19 +185,25 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
     def set_risk_groups(self, people, upper_age=None):
         """ Assign each person to a risk group """
         f_uids, m_uids = self._get_uids(people, upper_age=upper_age)
-        self.risk_group[f_uids] = self.pars.risk_groups_f.rvs(f_uids) - f_uids
-        self.risk_group[m_uids] = self.pars.risk_groups_m.rvs(m_uids) - m_uids
+        self.risk_group[f_uids] = self.pars.risk_groups_f.rvs(f_uids)
+        self.risk_group[m_uids] = self.pars.risk_groups_m.rvs(m_uids)
         return
 
     def set_concurrency(self, people, upper_age=1000):
         """ Assign each person a preferred number of simultaneous partners """
+        uids = people.uid
+        female = people.female
+        male = people.male
+        in_age_lim = (people.age < upper_age)
         for rg in range(self.pars.n_risk_groups):
             f_conc = self.pars[f'f{rg}_conc']
             m_conc = self.pars[f'm{rg}_conc']
-            f_uids = people.female & (self.risk_group == rg) & (people.age < upper_age)
-            m_uids = people.male & (self.risk_group == rg) & (people.age < upper_age)
-            self.concurrency[f_uids] = f_conc.rvs(f_uids)+1
-            self.concurrency[m_uids] = m_conc.rvs(m_uids)+1
+            in_risk_group = self.risk_group == rg
+            in_group = in_risk_group & in_age_lim
+            f_uids = uids[female & in_group]
+            m_uids = uids[male   & in_group]
+            self.concurrency[f_uids] = f_conc.rvs(f_uids) + 1
+            self.concurrency[m_uids] = m_conc.rvs(m_uids) + 1
         return
 
     def set_sex_work(self, people, upper_age=None):
