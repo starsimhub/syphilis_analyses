@@ -14,27 +14,27 @@ quick_run = False
 ss.options['multirng']=False
 
 
-def make_syph_sim(dt=1, n_agents=500):
+def make_syph_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500):
     """ Make a sim with syphilis """
     syph = ss.Syphilis()
     syph.pars['beta'] = {'structuredsexual': [0.95, 0.5], 'maternal': [0.99, 0]}
     syph.pars['init_prev'] = ss.bernoulli(p=0.1)
 
     # Make demographic modules
-    fertility_rates = {'fertility_rate': pd.read_csv(ss.root / 'tests/test_data/nigeria_asfr.csv')}
+    fertility_rates = {'fertility_rate': pd.read_csv(f'data/{location}_asfr.csv')}
     pregnancy = ss.Pregnancy(pars=fertility_rates)
-    death_rates = {'death_rate': pd.read_csv(ss.root / 'tests/test_data/nigeria_deaths.csv'), 'units': 1}
+    death_rates = {'death_rate': pd.read_csv(f'data/{location}_deaths.csv'), 'units': 1}
     death = ss.Deaths(death_rates)
 
     # Make people and networks
     ss.set_seed(1)
-    ppl = ss.People(n_agents, age_data=pd.read_csv(ss.root / 'tests/test_data/nigeria_age.csv'))
+    ppl = ss.People(n_agents, age_data=pd.read_csv(f'data/{location}_age.csv'))
     sexual = StructuredSexual()
     maternal = ss.MaternalNet()
 
     sim_kwargs = dict(
         dt=dt,
-        total_pop=93963392,
+        total_pop=total_pop,
         start=1990,
         n_years=40,
         people=ppl,
@@ -46,9 +46,9 @@ def make_syph_sim(dt=1, n_agents=500):
     return sim_kwargs
 
 
-def run_syph(dt=1.0, n_agents=500):
+def run_syph(location='zimbabwe', total_pop=100e6, dt=1.0, n_agents=500):
 
-    sim_kwargs = make_syph_sim(dt=dt, n_agents=n_agents)
+    sim_kwargs = make_syph_sim(location=location, total_pop=total_pop, dt=dt, n_agents=n_agents)
     sim = ss.Sim(**sim_kwargs)
     sim.run()
 
@@ -152,8 +152,13 @@ def plot_degree(sim):
 
 if __name__ == '__main__':
 
-    sim = run_syph(dt=1/12, n_agents=int(10e3))
-    sc.saveobj('sim.obj', sim)
+    location = 'zimbabwe'
+    total_pop = dict(
+        nigeria=93963392,
+        zimbabwe=9980999,
+    )[location]
+    sim = run_syph(location=location, total_pop=total_pop, dt=1/12, n_agents=int(10e3))
+    sc.saveobj(f'sim_{location}.obj', sim)
 
     plot_degree(sim)
     plot_mixing(sim)
