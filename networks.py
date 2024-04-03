@@ -196,8 +196,8 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
             m_conc = self.pars[f'm{rg}_conc']
             f_uids = people.female & (self.risk_group == rg) & (people.age < upper_age)
             m_uids = people.male & (self.risk_group == rg) & (people.age < upper_age)
-            # self.concurrency[f_uids] = f_conc.rvs(f_uids)+1
-            # self.concurrency[m_uids] = m_conc.rvs(m_uids)+1
+            self.concurrency[f_uids] = f_conc.rvs(f_uids)+1
+            self.concurrency[m_uids] = m_conc.rvs(m_uids)+1
         return
 
     def set_sex_work(self, people, upper_age=None):
