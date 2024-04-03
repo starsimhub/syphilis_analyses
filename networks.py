@@ -32,12 +32,12 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
             ),
 
             # Debut
-            debut_f=ss.lognorm_mean(20, 3),
-            debut_m=ss.lognorm_mean(21, 3),
+            debut_f=ss.lognorm_ex(20, 3),
+            debut_m=ss.lognorm_ex(21, 3),
 
             # Risk groups
-            risk_groups_f=ss.rv_discrete(values=([0, 1, 2], [0.85, 0.14, 0.01])),
-            risk_groups_m=ss.rv_discrete(values=([0, 1, 2], [0.78, 0.21, 0.01])),
+            risk_groups_f=ss.choice(a=3, p=np.array([0.85, 0.14, 0.01])),
+            risk_groups_m=ss.choice(a=3, p=np.array([0.78, 0.21, 0.01])),
 
             # Age difference preferences
             age_diff_pars=dict(
@@ -47,12 +47,12 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
             ),
 
             # Concurrency preferences - TODO, tidy
-            f0_conc=ss.poisson(mu=0.0001),
-            f1_conc=ss.poisson(mu=0.01),
-            f2_conc=ss.poisson(mu=0.1),
-            m0_conc=ss.poisson(mu=0.01),
-            m1_conc=ss.poisson(mu=0.2),
-            m2_conc=ss.poisson(mu=0.5),
+            f0_conc=ss.poisson(lam=0.0001),
+            f1_conc=ss.poisson(lam=0.01),
+            f2_conc=ss.poisson(lam=0.1),
+            m0_conc=ss.poisson(lam=0.01),
+            m1_conc=ss.poisson(lam=0.2),
+            m2_conc=ss.poisson(lam=0.5),
 
             # Relationship initiation, stability, and duration
             p_pair_form=ss.bernoulli(p=0.5),  # Probability of a pair forming between two matched people
@@ -71,7 +71,7 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
             ),
 
             # Acts
-            acts=ss.norm(loc=90, scale=30),  # Annual acts
+            acts=ss.normal(loc=90, scale=30),  # Annual acts
 
             # Sex work parameters
             fsw_shares=0.02,
@@ -81,10 +81,9 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
             sw_beta=0.5,  # Replace with condom use
 
             # Distributions derived from parameters above - don't adjust
-            age_diffs=ss.norm(loc=self.age_diff_fn_loc, scale=self.age_diff_fn_scale),
-            dur_stable=ss.norm(loc=self.stable_loc, scale=self.stable_scale),  # TODO: change to lognorm
-            dur_casual=ss.norm(loc=self.casual_loc, scale=self.casual_scale),
-
+            age_diffs=ss.normal(loc=self.age_diff_fn_loc, scale=self.age_diff_fn_scale),
+            dur_stable=ss.normal(loc=self.stable_loc, scale=self.stable_scale),  # TODO: change to lognorm
+            dur_casual=ss.normal(loc=self.casual_loc, scale=self.casual_scale),
         )
 
         par_dists = ss.omergeleft(

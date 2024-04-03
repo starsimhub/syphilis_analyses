@@ -15,7 +15,7 @@ ss.options['multirng']=False
 
 
 def make_syph_sim(dt=1, n_agents=500):
-    """ Make a sim with syphilis - used by several subsequent tests """
+    """ Make a sim with syphilis """
     syph = ss.Syphilis()
     syph.pars['beta'] = {'structuredsexual': [0.95, 0.5], 'maternal': [0.99, 0]}
     syph.pars['init_prev'] = ss.bernoulli(p=0.1)
