@@ -14,11 +14,14 @@ quick_run = False
 ss.options['multirng']=False
 
 
-def make_syph_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500):
+def make_syph_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, latent_trans=0.075):
     """ Make a sim with syphilis """
     syph = ss.Syphilis()
     syph.pars['beta'] = {'structuredsexual': [0.95, 0.5], 'maternal': [0.99, 0]}
     syph.pars['init_prev'] = ss.bernoulli(p=0.1)
+    syph.pars['rel_trans']['latent_temp'] = latent_trans
+    syph.pars['rel_trans']['latent_long'] = latent_trans
+
 
     # Make demographic modules
     fertility_rates = {'fertility_rate': pd.read_csv(f'data/{location}_asfr.csv')}
@@ -74,7 +77,7 @@ def plot_mixing(sim):
 
 def plot_syph(sim):
     # Check plots
-    burnin = 0
+    burnin = 10
     pi = int(burnin/sim.dt)
 
     fig, ax = plt.subplots(2, 2)
