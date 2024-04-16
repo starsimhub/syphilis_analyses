@@ -8,7 +8,7 @@ import starsim as ss
 import pandas as pd
 import matplotlib.pyplot as plt
 import sciris as sc
-from networks import StructuredSexual
+from stisim.networks import StructuredSexual
 
 quick_run = False
 ss.options['multirng']=False
