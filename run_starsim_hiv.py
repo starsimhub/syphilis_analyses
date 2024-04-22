@@ -51,21 +51,21 @@ def plot_viral_dynamics(sim_output):
     """
     3 Subplots to show viral load, CD4 count and infected cells count
     """
-    fig, ax = plt.subplots(1, 2, figsize=(25, 8))
+    fig, ax = plt.subplots(1, 2, figsize=(10, 4))
     # Plot the first 40 days only:
     sim_output_sub = sim_output.iloc[0:]
 
     # Viral Load:
-    ax[0].plot(sim_output_sub.index, sim_output_sub['hiv.Agent' + str(2) + '_V_level'], label='on ART')
-    ax[0].plot(sim_output_sub.index, sim_output_sub['hiv.Agent' + str(3) + '_V_level'], label='not on ART')
+    ax[0].plot(sim_output_sub.index, sim_output_sub['hiv.Agent' + str(2) + '_V_level'], label='not on ART')
+    #ax[0].plot(np.arange(0, 40), sim_output_sub['hiv.Agent' + str(8) + '_V_level'] * 1e3, label='not on ART')
     ax[0].set_xlabel('Time (days)')
     # ax[0].set_yscale('log')
     ax[0].set_ylabel('Viral load')
     ax[0].set_title('Viral load')
 
     # CD4-count
-    ax[1].plot(sim_output_sub.index, sim_output_sub['hiv.Agent' + str(2) + '_T_level'], label='on ART')
-    ax[1].plot(sim_output_sub.index, sim_output_sub['hiv.Agent' + str(3) + '_T_level'], label='not on ART')
+    ax[1].plot(sim_output_sub.index, sim_output_sub['hiv.Agent' + str(2) + '_T_level'], label='not on ART')
+    #ax[1].plot(np.arange(0, 40), sim_output_sub['hiv.Agent' + str(8) + '_T_level'], label='on ART')
     ax[1].set_xlabel('Time')
     ax[1].set_ylabel('CD4-count')
     ax[1].set_title('CD4-count')
@@ -85,15 +85,15 @@ def plot_hiv(sim_output):
     - HIV prevalence, HIV prevalence in FSW
     - n on ART
     """
-    fig, ax = plt.subplots(5, 2, figsize=(20, 15))
+    fig, ax = plt.subplots(4, 2, figsize=(15, 15))
 
     # sim_output = sim_output.iloc[1:]
-    ax[0, 0].plot(sim_output.iloc[1:].index, sim_output.iloc[1:]['hiv.new_infections'])
+    ax[0, 0].plot(sim_output.index, sim_output['hiv.new_infections'])
     ax[0, 0].set_title('New infections')
     ax[0, 1].plot(sim_output.index, sim_output['hiv.cum_infections'])
     ax[0, 1].set_title('Cumulative infections')
 
-    ax[1, 0].plot(sim_output.iloc[1:].index, sim_output.iloc[1:]['deaths.new'])
+    ax[1, 0].plot(sim_output.index, sim_output['deaths.new'])
     ax[1, 0].set_title('New Deaths')
     ax[1, 1].plot(sim_output.index, sim_output['deaths.cumulative'])
     ax[1, 1].set_title('Cumulative Deaths')
@@ -107,15 +107,10 @@ def plot_hiv(sim_output):
     ax[2, 0].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_2'], label='Risk Group 2')
     ax[2, 0].legend()
 
-    ax[3, 0].plot(sim_output.iloc[1:].index, sim_output.iloc[1:]['hiv.new_on_art'])
+    ax[3, 0].plot(sim_output.index, sim_output['hiv.new_on_art'])
     ax[3, 0].set_title('New on Art')
     ax[3, 1].plot(sim_output.index, sim_output['hiv.cum_on_art'])
     ax[3, 1].set_title('Cumulative ART')
-
-    ax[4, 0].plot(sim_output.iloc[1:].index, sim_output.iloc[1:]['hiv.new_diagnoses'])
-    ax[4, 0].set_title('New Diagnoses')
-    ax[4, 1].plot(sim_output.index, sim_output['hiv.cum_diagnoses'])
-    ax[4, 1].set_title('Cumulative Diagnoses')
 
 
     fig.tight_layout()
@@ -155,7 +150,7 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
         diseases=hiv,
         networks=ss.ndict(sexual, maternal),
         interventions=[HIV_testing(disease='hiv',
-                                   symp_prob=0.1,
+                                   symp_prob=0.01,
                                    sensitivity=0.9,
                                    test_delay_mean=1)],
         demographics=[pregnancy, death],

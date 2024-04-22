@@ -5,6 +5,8 @@ Define interventions (and analyzers)
 import starsim as ss
 import sciris as sc
 import numpy as np
+from collections import defaultdict
+
 
 __all__ = ['Analyzer', 'Intervention']
 
@@ -178,7 +180,7 @@ class CampaignDelivery(Intervention):
 
 # %% Screening and triage
 __all__ += ['BaseTest', 'BaseScreening', 'routine_screening', 'campaign_screening', 'BaseTriage', 'routine_triage',
-            'campaign_triage']
+            'campaign_triage', 'HIV_testing']
 
 
 class BaseTest(Intervention):
@@ -360,6 +362,149 @@ class campaign_triage(BaseTriage, CampaignDelivery):
         BaseTriage.initialize(self, sim)
         return
 
+class HIV_testing(ss.Intervention):
+    """
+    Probability-based testing
+    """
+
+    def __init__(self, symp_prob, sensitivity, disease, *args, test_delay_mean=None, vac_symp_prob=np.nan, asymp_prob=np.nan, exclude=None, test_delay=None, **kwargs):
+        """
+        Args:
+            symp_prob:
+            sensitivity:
+            test_delay_mean: Mean test delay - note that the minimum test delay is 1, so test_delay_mean=0 will result in all tests taking exactly 1 day to be returned
+            test_delay: If specified, don't sample from the test delay
+            *args:
+            vac_symp_prob: If provided, specify an ABSOLUTE testing rate for symptomatic vaccinated people. If nan, they will test at the same rate as the unvaccinated people
+            exclude: If provided, specify a list/array of indices of people that should not be tested via this intervention
+            **kwargs:
+        """
+
+        super().__init__(*args, **kwargs)
+
+        assert (test_delay_mean is None) != (test_delay is None), "Either the mean test delay or the absolute test delay must be specified"
+        self.results = ss.Results(self.name)
+
+        if asymp_prob == np.nan:
+            self.asymp_prob = 0
+        else:
+            self.asymp_prob = asymp_prob
+        self.symp_prob = symp_prob
+        if not isinstance(sensitivity, dict):
+            self.sensitivity = {"symptomatic": sensitivity}
+        else:
+            self.sensitivity = sensitivity
+        self.disease = disease
+        self.test_delay_mean = test_delay_mean
+        self.test_delay = test_delay
+        self.vac_symp_prob = vac_symp_prob
+        self.test_probs = ss.State('test_prob', float, 0.0)
+        self.delays = ss.State('delay', float, np.nan)
+
+        self.n_tests = None
+        self.n_positive = None  # Record how many tests were performed that will come back positive
+        self.exclude = exclude  # Exclude certain people - mainly to cater for simulations where the index case/incursion should not be diagnosed
+
+        self._scheduled_tests = defaultdict(list)
+
+    def initialize(self, sim):
+        super().initialize(sim)
+        self.results += ss.Result(self.name, 'new_tests', sim.npts, dtype=float)
+        self.n_tests = np.zeros(sim.npts)
+        self.n_positive = np.zeros(sim.npts)
+        self.test_probs.initialize(sim.people)
+        self.delays.initialize(sim.people)
+
+    def schedule_test(self, sim, uids, t: int):
+        """
+        Schedule a test in the future
+
+        If the test is requested today, then test immediately.
+
+        :param uids: Iterable with person indices to test
+        :param t: Simulation day on which to test them
+        :return:
+        """
+
+        if t == sim.ti:
+            # If a person is scheduled to test on the same day (e.g., if they are a household contact and get tested on
+            # the same day they are notified)
+
+            not_dead_diag = sim.diseases[self.disease].diagnosed | sim.people.dead
+            uids = uids[np.logical_not(not_dead_diag[uids])]  # Only test people that haven't been diagnosed and are alive
+            self._test(sim, uids)
+        else:
+            self._scheduled_tests[t] += uids.tolist()
+
+    def _test(self, sim, test_uids):
+        # After testing (via self.apply or self.schedule_test) perform some post-testing tasks
+        # test_uids are the indices of the people that were requested to be tested (i.e. that were
+        # passed into sim.people.test, so a test was performed on them
+        #
+        # CAUTION - this method gets called via both apply() and schedule_test(), therefore it can be
+        # called multiple times per timestep, quantities must be incremented rather than overwritten
+        if len(test_uids) == 0:
+            return
+
+        symp_test_uids = test_uids[sim.diseases[self.disease].symptomatic[test_uids]]
+        other_test_uids = test_uids[~sim.diseases[self.disease].symptomatic[test_uids]]
+
+        if len(symp_test_uids):
+            sim.diseases[self.disease].test(symp_test_uids, sim.ti, test_sensitivity=self.sensitivity['symptomatic'], loss_prob=0, test_delay=np.inf)  # Actually test people with mild symptoms
+        if len(other_test_uids):
+            sim.diseases[self.disease].test(other_test_uids, sim.ti, test_sensitivity=self.sensitivity['symptomatic'], loss_prob=0, test_delay=np.inf)  # Actually test people without symptoms
+
+        if self.test_delay is not None:
+            self.delays[test_uids] = self.test_delay
+        else:
+            self.delays[test_uids] = np.maximum(1, np.random.poisson(self.test_delay_mean,  len(test_uids)))
+
+        # Update the date diagnosed
+        positive_today = ss.true(sim.diseases[self.disease].ti_pos_test[test_uids] == sim.ti)
+
+        sim.diseases[self.disease].ti_diagnosed[positive_today] = sim.ti + self.delays[positive_today]
+
+        # Schedule ART Treatment:
+        ART_delay = self.delays[test_uids]
+        for delay in set(ART_delay.tolist()):
+            match_delay = ART_delay == delay
+            sim.diseases[self.disease].schedule_ART_treatment(test_uids[match_delay], sim.ti, period=delay)
+
+        # Logging
+        self.n_positive[sim.ti] = len(positive_today)
+
+        # Store tests performed by this intervention
+        #ToDO: would need adjusting for population changes?
+        n_tests = len(test_uids) * sim.pars["pop_scale"]
+        self.n_tests[sim.ti] += n_tests
+        self.results["new_tests"][sim.ti] = n_tests  # Update total test count
+
+    def select_people(self, sim):
+        # First, insert any fixed test probabilities
+        self.test_probs.values = np.ones(len(sim.people)) * self.asymp_prob
+        self.test_probs[sim.diseases[self.disease].symptomatic] = self.symp_prob  # Symptomatic people test at a higher rate
+        if self.exclude is not None:
+            self.test_probs[self.exclude] = 0  # If someone is excluded, then they shouldn't test via `apply()` (but can still test via a scheduled test)
+        if sim.pars.remove_dead and len(self._scheduled_tests[sim.ti]) > 0:
+            self.clean_uid(sim)
+        self.test_probs[self._scheduled_tests[sim.ti]] = 1  # People scheduled to test (e.g. via contact tracing) are guaranteed to test
+        self.test_probs[sim.diseases[self.disease].diagnosed] = 0  # People already diagnosed don't test again
+        self.test_probs[sim.diseases[self.disease].dead] = 0  # Dead people don't get tested
+        test_uids = ss.true(np.random.random(self.test_probs.shape) < self.test_probs)  # Finally, calculate who actually tests
+        return test_uids
+
+    def apply(self, sim):
+
+        test_uids = self.select_people(sim)
+        self._test(sim, test_uids)
+
+    def clean_uid(self, sim):
+        """
+        Removes uids of dead agents if simulation is removing them
+        """
+
+        self._scheduled_tests[sim.ti] = [uid for uid in self._scheduled_tests[sim.ti] if uid in sim.people.uid]
+
 
 #%% Treatment interventions
 __all__ += ['BaseTreatment', 'treat_num', 'ART']
@@ -499,7 +644,6 @@ class ART(ss.Intervention):
 
         # Add result
         self.results['n_art'][sim.ti] = np.count_nonzero(sim.people.alive & sim.people.hiv.on_art)
-
         return n_added
 
 #%% Vaccination
