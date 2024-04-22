@@ -17,6 +17,7 @@ class HIV(ss.Infection):
         self.add_states(
             ss.State('on_art', bool, False),
             ss.State('ti_art', int, ss.INT_NAN),
+            ss.State('ti_stop_art', float, np.nan),
             # ss.State('cd4', float, 500),  # cells/uL
             ss.State('cd4', float, 1),  #
             ss.State('infected_cells', float, 0),  # cells per uL
@@ -47,6 +48,9 @@ class HIV(ss.Infection):
                              init_prev=0.05,
                              eff_condoms=0.7,
                              ART_prob=0.5,
+                             stop_ART_prob = 0.1, # probability of stopping ART after
+                             avg_duration_stop_ART = 12, # 12 months for now, TODO draw from a distribution
+                             avg_duration_restart_ART = 12,
                              art_efficacy=0.96,
                              death_prob=0.05,
                              viral_timecourse=None
@@ -136,7 +140,8 @@ class HIV(ss.Infection):
         return
 
     def update_post(self, sim):
-        self.check_ART_treatment(sim.ti)
+        self.check_start_ART_treatment(sim.ti)
+        self.check_stop_ART_treatment(sim.ti)
 
     def init_results(self, sim):
         """
@@ -167,8 +172,9 @@ class HIV(ss.Infection):
     def update_results(self, sim):
         super().update_results(sim)
 
-        # Check who is ready for ART treatment
-        self.check_ART_treatment(sim.ti)
+        # Check who will start and stop ART treatment
+        self.check_start_ART_treatment(sim.ti)
+        self.check_stop_ART_treatment(sim.ti)
 
         self.results['new_deaths'][sim.ti] = np.count_nonzero(self.ti_dead == sim.ti)
         self.results['cum_deaths'][sim.ti] = np.sum(self.results['new_deaths'][:sim.ti])
@@ -266,11 +272,40 @@ class HIV(ss.Infection):
             self._pending_ARTtreatment[start_date].append((uid, start_date + period))
         return
 
-    def check_ART_treatment(self, t):
-        """
-        Update ART state
-        """
+    def check_uids(self, current, date, t, filter_uids=None):
+        '''
+        Return indices for which the current state is false and which meet the date criterion
+        '''
+        if filter_uids is None:
+            not_current = ss.false(current)
+        else:
+            not_current = filter_uids[np.logical_not(current[filter_uids])]
+        has_date = not_current[~np.isnan(date[not_current])]
+        uids = has_date[t >= date[has_date]]
+        return uids
 
+    def check_start_ART_treatment(self, t):
+        """
+        Check who is ready to start ART treatment
+        """
         for uid, end_day in self._pending_ARTtreatment[t]:
             self.on_art[uid] = True
             self.ti_art[uid] = t
+
+        # A small subset will stop ART after a certain time:
+        stop_ART_uids = np.random.random(len(self._pending_ARTtreatment[t])) < self.pars.stop_ART_prob
+        self.ti_stop_art[stop_ART_uids] = t + self.pars.avg_duration_stop_ART
+
+    def check_stop_ART_treatment(self, t):
+        """
+        Check who is stopping ART treatment
+        """
+        stop_uids = self.check_uids(~self.on_art, self.ti_stop_art, t, filter_uids=None)
+        self.on_art[stop_uids] = False
+        self.ti_stop_art[stop_uids] = np.nan
+
+        # Add a subset back to the pool of agents pending ART:
+        uids_pending_ART = np.random.random(len(stop_uids)) < self.pars.stop_ART_prob # Will the agents go back to ART?
+        self.schedule_ART_treatment(uids_pending_ART, self.pars.avg_duration_restart_ART)
+
+
