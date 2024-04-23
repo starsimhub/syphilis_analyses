@@ -18,6 +18,8 @@ class HIV(ss.Infection):
             ss.State('on_art', bool, False),
             ss.State('ti_art', int, ss.INT_NAN),
             ss.State('ti_stop_art', float, np.nan),
+            ss.State('n_start_ART', int, 0),
+            ss.State('max_n_start_ART', float, np.nan),
             # ss.State('cd4', float, 500),  # cells/uL
             ss.State('cd4', float, 1),  #
             ss.State('infected_cells', float, 0),  # cells per uL
@@ -39,20 +41,13 @@ class HIV(ss.Infection):
                              cd4_min=100,
                              cd4_max=500,
                              cd4_rate=5,
-                             # From: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6155466/#imr12698-bib-0019
-                             d_T=0.1 / 24,  # 0.1 cells/uL/day
-                             lambda_T=100 / 24,  # 100 cells/uL/day
-                             d_I=1 / 24,  # 1 cell/uL/day
-                             k=250 / 24,  # 250 virus/cell/day
-                             c=25 / 24,  # 25 virus/day
-                             beta_noART=(3 * 1e-4) / 24,  # 3 * 1e-7 virus/ml/day -> 3 * 1e-4 virus/uL/day
                              init_prev=0.05,
                              eff_condoms=0.7,
-                             ART_prob=0.9,
-                             stop_ART_prob=0.1,
-                             restart_ART_prob=0.9,
-                             avg_duration_stop_ART=12, # 12 months for now, TODO draw from a distribution
-                             avg_duration_restart_ART=12,
+                             ART_prob=1,
+                             n_ART_start= ss.normal(loc=5, scale=0.5), # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
+                             duration_on_ART=ss.normal(loc=18, scale=2), # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
+                             duration_off_ART=ss.normal(loc=18, scale=2), # TODO find information on this
+                             end_on_ART_prob=1, # Probability to remain on ART after max stops
                              art_efficacy=0.96,
                              death_prob=0.05,
                              viral_timecourse=None
@@ -209,6 +204,7 @@ class HIV(ss.Infection):
         self.ti_infected[uids] = sim.ti
         self.ti_infectious[uids] = sim.ti  + 14
         self.ti_since_untreated[uids] = sim.ti
+        self.max_n_start_ART[uids] = self.pars.n_ART_start.rvs(len(uids)).astype(int) # TODO define integer normal distribution
         return
 
     def set_congenital(self, sim, target_uids, source_uids):
@@ -279,13 +275,17 @@ class HIV(ss.Infection):
         Check who is ready to start ART treatment
         """
         for uid, end_day in self._pending_ARTtreatment[sim.ti]:
-            if uid in sim.people.alive.uid:
+            if uid in sim.people.alive.uid and self.n_start_ART[uid] < self.max_n_start_ART[uid]:
                 self.on_art[uid] = True
                 self.ti_art[uid] = sim.ti
+                self.n_start_ART[uid] += 1
 
-        # A small subset will stop ART after a certain time:
-        stop_ART_uids = np.random.random(len(self._pending_ARTtreatment[sim.ti])) < self.pars.stop_ART_prob
-        self.ti_stop_art[stop_ART_uids] = sim.ti + self.pars.avg_duration_stop_ART
+                if self.n_start_ART[uid] == self.max_n_start_ART[uid]:
+                    # Decide whether agent should stay on ART for the remaining sim or stop ART one last time:
+                    if np.random.random(1) > self.pars.end_on_ART_prob:
+                        self.ti_stop_art[uid] = sim.ti + int(self.pars.duration_on_ART.rvs(1))
+                else:
+                    self.ti_stop_art[uid] = sim.ti + int(self.pars.duration_on_ART.rvs(1))
 
     def check_stop_ART_treatment(self, sim):
         """
@@ -297,8 +297,8 @@ class HIV(ss.Infection):
         self.ti_stop_art[stop_uids] = np.nan
         self.ti_since_untreated[stop_uids] = sim.ti
 
-        # Add a subset back to the pool of agents pending ART:
-        uids_pending_ART = stop_uids[np.random.random(len(stop_uids)) < self.pars.restart_ART_prob] # Will the agents go back to ART?
-        self.schedule_ART_treatment(uids_pending_ART, sim.ti + self.pars.avg_duration_restart_ART)
-
+        # Schedule ART treatment for a subset of agents:
+        uids_pending_ART = stop_uids[self.n_start_ART[stop_uids] < self.max_n_start_ART[stop_uids]]
+        for uid in uids_pending_ART:
+            self.schedule_ART_treatment(np.array([uid]), int(sim.ti + self.pars.duration_off_ART.rvs(1)))
 
