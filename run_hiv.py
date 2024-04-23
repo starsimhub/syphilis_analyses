@@ -8,9 +8,10 @@ import starsim as ss
 import pandas as pd
 import matplotlib.pyplot as plt
 import sciris as sc
+import seaborn as sns
 from stisim.networks import StructuredSexual
 from stisim.diseases.hiv import HIV
-from stisim.interventions import ART, HIV_testing
+from stisim.interventions import ART, HIV_testing, test_ART
 
 quick_run = False
 ss.options['multirng'] = False
@@ -47,32 +48,34 @@ def plot_V_level(sim_output):
     sc.savefig("figures/viral_loads.png", dpi=100)
 
 
-def plot_viral_dynamics(sim_output):
+def plot_viral_dynamics(output, save_agents):
     """
-    3 Subplots to show viral load, CD4 count and infected cells count
+    2 Subplots to show viral load, CD4 count
     """
-    fig, ax = plt.subplots(1, 2, figsize=(25, 8))
-    # Plot the first 40 days only:
-    sim_output_sub = sim_output.iloc[0:]
+    for index, agent in enumerate(save_agents):
+        fig, ax = plt.subplots(1, 2, figsize=(25, 8))
+        df_this_agent = output[output.columns[output.columns.str.contains('_' + str(agent))]].dropna()
+        sns.scatterplot(ax=ax[0], x=df_this_agent.index, y="viral_load_" + str(agent), data = df_this_agent, hue='ART_status_' + str(agent))
+        sns.scatterplot(ax=ax[1], x=df_this_agent.index, y="cd4_count_" + str(agent), data=df_this_agent, hue='ART_status_' + str(agent))
 
-    # Viral Load:
-    ax[0].plot(sim_output_sub.index, sim_output_sub['hiv.Agent' + str(2) + '_V_level'], label='on ART')
-    ax[0].plot(sim_output_sub.index, sim_output_sub['hiv.Agent' + str(3) + '_V_level'], label='not on ART')
-    ax[0].set_xlabel('Time (days)')
-    # ax[0].set_yscale('log')
-    ax[0].set_ylabel('Viral load')
-    ax[0].set_title('Viral load')
+        ax[0].set_xlabel('Time (months)')
+        # ax[0].set_yscale('log')
+        ax[0].set_ylim([0, 1])
+        ax[0].set_xlim([0, len(output)])
+        ax[0].set_ylabel('Viral load')
+        ax[0].set_title('Viral load')
 
-    # CD4-count
-    ax[1].plot(sim_output_sub.index, sim_output_sub['hiv.Agent' + str(2) + '_T_level'], label='on ART')
-    ax[1].plot(sim_output_sub.index, sim_output_sub['hiv.Agent' + str(3) + '_T_level'], label='not on ART')
-    ax[1].set_xlabel('Time')
-    ax[1].set_ylabel('CD4-count')
-    ax[1].set_title('CD4-count')
+        # CD4-count
+        ax[1].set_xlabel('Time (months)')
+        ax[1].set_ylabel('CD4-count')
+        ax[1].set_title('CD4-count')
+        ax[1].set_ylim([0, 1])
+        ax[1].set_xlim([0, len(output)])
 
-    ax[0].legend()
-    fig.tight_layout()
-    sc.savefig("figures/viral_dynamics.png", dpi=100)
+        ax[0].legend()
+        fig.tight_layout()
+        sc.savefig("figures/individual_viral_dynamics/viral_dynamics_agent_" + str(agent) + ".png", dpi=100)
+        plt.close()
 
 
 def plot_hiv(sim_output):
@@ -123,7 +126,7 @@ def plot_hiv(sim_output):
     sc.savefig("figures/hiv_plots.png", dpi=100)
 
 
-def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, latent_trans=0.075):
+def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, latent_trans=0.075, save_agents=np.array([0])):
     """
     Make a sim with HIV
     """
@@ -157,18 +160,23 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
         interventions=[HIV_testing(disease='hiv',
                                    symp_prob=0.1,
                                    sensitivity=0.9,
-                                   test_delay_mean=1)],
+                                   test_delay_mean=1),
+                       test_ART(disease='hiv',
+                                uids=save_agents,
+                                infect_uids_t=np.repeat(0, len(save_agents)),
+                                stop_ART=True,
+                                restart_ART=True)],
         demographics=[pregnancy, death],
     )
 
     return sim_kwargs
 
 
-def run_hiv(location='zimbabwe', total_pop=100e6, dt=1.0, n_agents=500):
+def run_hiv(location='zimbabwe', total_pop=100e6, dt=1.0, n_agents=500, save_agents=np.array([0])):
     """
     Make and run the sim
     """
-    sim_kwargs = make_hiv_sim(location=location, total_pop=total_pop, dt=dt, n_agents=n_agents)
+    sim_kwargs = make_hiv_sim(location=location, total_pop=total_pop, dt=dt, n_agents=n_agents, save_agents=save_agents)
     sim = ss.Sim(**sim_kwargs)
     sim.run()
     df_res = sim.export_df()
@@ -183,13 +191,15 @@ if __name__ == '__main__':
         nigeria=93963392,
         zimbabwe=9980999,
     )[location]
-    sim, output = run_hiv(location=location, total_pop=total_pop, dt=1 / 12, n_agents=int(10e3))
+    save_agents = np.arange(0, 40)
+    sim, output = run_hiv(location=location, total_pop=total_pop, dt=1 / 12, n_agents=int(10e3), save_agents=save_agents)
     output.to_csv("HIV_output.csv")
 
-    # Plot viral dynamics of one infected agent not on ART (hard-coded) to check if dynamics work sensibly
-    # plot_T_level(output)
-    # plot_V_level(output)
-    plot_viral_dynamics(output)
+    # Call method in test_ART intervention:
+    sim.get_interventions(test_ART)[0].save_viral_histories(sim)
+    viral_histories = pd.read_csv("viral_histories.csv", index_col=0)
+    plot_viral_dynamics(viral_histories, save_agents)
+
     plot_hiv(output)
 
     sc.saveobj(f'sim_{location}.obj', sim)

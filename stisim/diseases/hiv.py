@@ -31,7 +31,8 @@ class HIV(ss.Infection):
             ss.State('ti_tested', float, np.nan),
             ss.State('ti_pos_test', float, np.nan),
             ss.State('ti_diagnosed', float, np.nan),
-            ss.State('ti_infectious', float, np.nan)
+            ss.State('ti_infectious', float, np.nan),
+            ss.State('ti_since_untreated', float, np.nan)
         )
 
         pars = ss.omergeleft(pars,
@@ -47,10 +48,11 @@ class HIV(ss.Infection):
                              beta_noART=(3 * 1e-4) / 24,  # 3 * 1e-7 virus/ml/day -> 3 * 1e-4 virus/uL/day
                              init_prev=0.05,
                              eff_condoms=0.7,
-                             ART_prob=0.5,
-                             stop_ART_prob = 0.1, # probability of stopping ART after
-                             avg_duration_stop_ART = 12, # 12 months for now, TODO draw from a distribution
-                             avg_duration_restart_ART = 12,
+                             ART_prob=0.9,
+                             stop_ART_prob=0.1,
+                             restart_ART_prob=0.9,
+                             avg_duration_stop_ART=12, # 12 months for now, TODO draw from a distribution
+                             avg_duration_restart_ART=12,
                              art_efficacy=0.96,
                              death_prob=0.05,
                              viral_timecourse=None
@@ -108,14 +110,14 @@ class HIV(ss.Infection):
         self.infectious[infectious] = True
 
         # Update viral load and cd4 count:
-        duration_since_infection = sim.ti - self.ti_infected[infected_uids]
-        duration_since_infection = np.minimum(duration_since_infection, len(self.pars.viral_timecourse) - 1).astype(int)
+        duration_since_untreated = sim.ti - self.ti_since_untreated[infected_uids]
+        duration_since_untreated = np.minimum(duration_since_untreated, len(self.pars.viral_timecourse) - 1).astype(int)
         duration_since_onART = sim.ti - self.ti_art[infected_uids_onART]
         duration_since_onART = np.minimum(duration_since_onART, 3)
-        assert not np.any(duration_since_infection < 0) # Cannot have negative durations, can disable this check for performance if required
+        assert not np.any(duration_since_untreated < 0) # Cannot have negative durations, can disable this check for performance if required
 
-        viral_load = self.pars.viral_timecourse[duration_since_infection]
-        cd4_count = self.pars.cd4_timecourse[duration_since_infection]
+        viral_load = self.pars.viral_timecourse[duration_since_untreated]
+        cd4_count = self.pars.cd4_timecourse[duration_since_untreated]
 
         self.cd4[infected_uids] = cd4_count
         self.virus[infected_uids] = viral_load
@@ -136,6 +138,7 @@ class HIV(ss.Infection):
         # Update today's diagnoses
         diagnosed = ss.true(self.ti_diagnosed <= sim.ti)
         self.diagnosed[diagnosed] = True
+
 
         return
 
@@ -162,19 +165,14 @@ class HIV(ss.Infection):
             self.results += ss.Result(self.name, 'prevalence_risk_group_' + str(risk_group), sim.npts, dtype=float)
             self.results += ss.Result(self.name, 'new_infections_risk_group_' + str(risk_group), sim.npts, dtype=float)
 
-        # Save the V, T and I level for a few example agents not on Art:
-        for agent in [2, 19, 3]:
-            if agent in self.virus.uid:
-                self.results += ss.Result(self.name, 'Agent' + str(agent) + '_V_level', sim.npts, dtype=float)
-                self.results += ss.Result(self.name, 'Agent' + str(agent) + '_T_level', sim.npts, dtype=float)
         return
 
     def update_results(self, sim):
         super().update_results(sim)
 
         # Check who will start and stop ART treatment
-        self.check_start_ART_treatment(sim.ti)
-        self.check_stop_ART_treatment(sim.ti)
+        self.check_start_ART_treatment(sim)
+        self.check_stop_ART_treatment(sim)
 
         self.results['new_deaths'][sim.ti] = np.count_nonzero(self.ti_dead == sim.ti)
         self.results['cum_deaths'][sim.ti] = np.sum(self.results['new_deaths'][:sim.ti])
@@ -195,15 +193,6 @@ class HIV(ss.Infection):
         self.results['prevalence_sw'][sim.ti] = sum(fsw_infected.values) / len(fsw_infected)
         self.results['prevalence_client'][sim.ti] = sum(client_infected.values) / len(client_infected)
 
-        # Save the V, T and I level for two example agents:
-        for agent in [2, 19, 3]:
-            # Save the V, T and I level for two example agents:
-            if agent in self.virus.uid:
-                self.results['Agent' + str(agent) + '_V_level'][sim.ti] = round(self.virus[agent], 4)
-                self.results['Agent' + str(agent) + '_T_level'][sim.ti] = round(self.cd4[agent], 4)
-            else:
-                self.results['Agent' + str(agent) + '_V_level'][sim.ti] = None
-                self.results['Agent' + str(agent) + '_T_level'][sim.ti] = None
 
         return
 
@@ -218,7 +207,8 @@ class HIV(ss.Infection):
         self.susceptible[uids] = False
         self.infected[uids] = True
         self.ti_infected[uids] = sim.ti
-        self.ti_infectious[uids] = sim.ti + 14
+        self.ti_infectious[uids] = sim.ti  + 14
+        self.ti_since_untreated[uids] = sim.ti
         return
 
     def set_congenital(self, sim, target_uids, source_uids):
@@ -284,28 +274,31 @@ class HIV(ss.Infection):
         uids = has_date[t >= date[has_date]]
         return uids
 
-    def check_start_ART_treatment(self, t):
+    def check_start_ART_treatment(self, sim):
         """
         Check who is ready to start ART treatment
         """
-        for uid, end_day in self._pending_ARTtreatment[t]:
-            self.on_art[uid] = True
-            self.ti_art[uid] = t
+        for uid, end_day in self._pending_ARTtreatment[sim.ti]:
+            if uid in sim.people.alive.uid:
+                self.on_art[uid] = True
+                self.ti_art[uid] = sim.ti
 
         # A small subset will stop ART after a certain time:
-        stop_ART_uids = np.random.random(len(self._pending_ARTtreatment[t])) < self.pars.stop_ART_prob
-        self.ti_stop_art[stop_ART_uids] = t + self.pars.avg_duration_stop_ART
+        stop_ART_uids = np.random.random(len(self._pending_ARTtreatment[sim.ti])) < self.pars.stop_ART_prob
+        self.ti_stop_art[stop_ART_uids] = sim.ti + self.pars.avg_duration_stop_ART
 
-    def check_stop_ART_treatment(self, t):
+    def check_stop_ART_treatment(self, sim):
         """
         Check who is stopping ART treatment
         """
-        stop_uids = self.check_uids(~self.on_art, self.ti_stop_art, t, filter_uids=None)
+        stop_uids = self.check_uids(~self.on_art, self.ti_stop_art, sim.ti, filter_uids=None)
         self.on_art[stop_uids] = False
+        self.ti_art[stop_uids] = np.nan
         self.ti_stop_art[stop_uids] = np.nan
+        self.ti_since_untreated[stop_uids] = sim.ti
 
         # Add a subset back to the pool of agents pending ART:
-        uids_pending_ART = np.random.random(len(stop_uids)) < self.pars.stop_ART_prob # Will the agents go back to ART?
-        self.schedule_ART_treatment(uids_pending_ART, self.pars.avg_duration_restart_ART)
+        uids_pending_ART = stop_uids[np.random.random(len(stop_uids)) < self.pars.restart_ART_prob] # Will the agents go back to ART?
+        self.schedule_ART_treatment(uids_pending_ART, sim.ti + self.pars.avg_duration_restart_ART)
 
 
