@@ -33,6 +33,7 @@ class Syphilis(ss.Infection):
             ss.State('ti_secondary', int, ss.INT_NAN),
             ss.State('ti_latent', int, ss.INT_NAN),
             ss.State('ti_tertiary', int, ss.INT_NAN),
+            ss.State('ti_dead', int, ss.INT_NAN),
             ss.State('ti_immune', int, ss.INT_NAN),
             ss.State('ti_miscarriage', int, ss.INT_NAN),
             ss.State('ti_nnd', int, ss.INT_NAN),
@@ -158,6 +159,11 @@ class Syphilis(ss.Infection):
         self.tertiary[tertiary] = True
         self.latent[tertiary] = False
         self.rel_trans[tertiary] = self.pars.rel_trans['tertiary']
+
+        # Trigger deaths
+        deaths = ss.true(self.ti_dead <= sim.ti)
+        if len(deaths):
+            sim.people.request_death(deaths)
 
         # Congenital syphilis deaths
         nnd = self.ti_nnd == sim.ti
