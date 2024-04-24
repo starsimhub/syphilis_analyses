@@ -44,13 +44,12 @@ class HIV(ss.Infection):
                              init_prev=0.05,
                              eff_condoms=0.7,
                              ART_prob=1,
-                             n_ART_start= ss.normal(loc=5, scale=0.5), # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
-                             duration_on_ART=ss.normal(loc=18, scale=2), # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
-                             duration_off_ART=ss.normal(loc=18, scale=2), # TODO find information on this
+                             n_ART_start= ss.normal(loc=5, scale=3), # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
+                             duration_on_ART=ss.normal(loc=18, scale=5), # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
+                             duration_off_ART=ss.normal(loc=18, scale=5), # TODO find information on this
                              end_on_ART_prob=1, # Probability to remain on ART after max stops
                              art_efficacy=0.96,
-                             death_prob=0.05,
-                             viral_timecourse=None
+                             death_prob=0.05
                              )
 
         par_dists = ss.omergeleft(par_dists,
@@ -62,7 +61,9 @@ class HIV(ss.Infection):
         self.death_prob_data = sc.dcp(self.pars.death_prob)
         self.pars.death_prob = self.make_death_prob
         self._pending_ARTtreatment = defaultdict(list)
+        self.art_transmission_reduction = self.pars.art_efficacy / 6 # Assumption: 6 months
         self.pars.viral_timecourse,  self.pars.cd4_timecourse = self.get_viral_dynamics_timecourses()
+        self.pars.transmission_timecourse = self.get_transmission_timecouse()
 
         return
 
@@ -76,6 +77,13 @@ class HIV(ss.Infection):
         out = sim.dt * module.death_prob_data / (p.cd4_min - p.cd4_max) ** 2 * (module.cd4[uids] - p.cd4_max) ** 2
         out = np.array(out)
         return out
+
+    def get_transmission_timecouse(self):
+
+        transmission_timecourse_data = [(0, 0), (1, 6), (2, 1)]
+        transmission_timecourse = self._interpolate(transmission_timecourse_data, np.arange(0, 2+1))
+
+        return transmission_timecourse
 
     def get_viral_dynamics_timecourses(self):
 
@@ -99,30 +107,31 @@ class HIV(ss.Infection):
 
         infected_uids = sim.people.alive & self.infected
         infected_uids_onART = sim.people.alive & self.infected & self.on_art
+        infected_uids_not_onART = sim.people.alive & self.infected & ~self.on_art
 
         # Progress exposed -> infectious
         infectious = ss.true(self.infected & (self.ti_infectious <= sim.ti))
         self.infectious[infectious] = True
 
         # Update viral load and cd4 count:
-        duration_since_untreated = sim.ti - self.ti_since_untreated[infected_uids]
-        duration_since_untreated = np.minimum(duration_since_untreated, len(self.pars.viral_timecourse) - 1).astype(int)
+        duration_since_infection = sim.ti - self.ti_infected[infected_uids_not_onART]
+        duration_since_infection = np.minimum(duration_since_infection, len(self.pars.transmission_timecourse) - 1).astype(int)
         duration_since_onART = sim.ti - self.ti_art[infected_uids_onART]
-        duration_since_onART = np.minimum(duration_since_onART, 3)
-        assert not np.any(duration_since_untreated < 0) # Cannot have negative durations, can disable this check for performance if required
+        # Assumption: Art impact increases linearly over 6 months
+        duration_since_onART = np.minimum(duration_since_onART, 6)
+        # Cannot have negative durations, can disable this check for performance if required
+        assert not np.any(duration_since_infection < 0)
+        assert not np.any(duration_since_onART < 0)
 
-        viral_load = self.pars.viral_timecourse[duration_since_untreated]
-        cd4_count = self.pars.cd4_timecourse[duration_since_untreated]
-
-        self.cd4[infected_uids] = cd4_count
-        self.virus[infected_uids] = viral_load
+        cd4_count = self.pars.cd4_timecourse[duration_since_infection]
+        self.cd4[infected_uids_not_onART] = cd4_count
 
         # Update viral load and cd4 counts for agents on ART
-        self.virus[infected_uids_onART] = self.virus[infected_uids_onART] - duration_since_onART * self.virus[infected_uids_onART]/3 # Assumption: back to 0 in 3 months
         self.cd4[infected_uids_onART] = self.cd4[infected_uids_onART] + duration_since_onART * (1-self.cd4[infected_uids_onART]) / 3 # Assumption: back to 1 in 3 months
 
         # Update transmission
-        self.rel_trans[sim.people.alive & self.infected] = viral_load
+        self.rel_trans[infected_uids_not_onART] = self.pars.transmission_timecourse[duration_since_infection]
+        self.rel_trans[infected_uids_onART] = 1 - self.art_transmission_reduction * duration_since_onART
 
         can_die = ss.true(sim.people.alive & sim.people.hiv.infected)
         hiv_deaths = self.pars.death_prob.filter(can_die)
@@ -131,9 +140,11 @@ class HIV(ss.Infection):
         self.ti_dead[hiv_deaths] = sim.ti
 
         # Update today's diagnoses
-        diagnosed = ss.true(self.ti_diagnosed <= sim.ti)
+        diagnosed = ss.true(self.ti_diagnosed == sim.ti)
         self.diagnosed[diagnosed] = True
 
+        # Schedule ART for diagnosed cases:
+        self.schedule_ART_treatment(diagnosed, sim.ti)
 
         return
 

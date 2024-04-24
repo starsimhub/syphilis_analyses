@@ -464,12 +464,12 @@ class HIV_testing(ss.Intervention):
         positive_today = ss.true(sim.diseases[self.disease].ti_pos_test[test_uids] == sim.ti)
 
         sim.diseases[self.disease].ti_diagnosed[positive_today] = sim.ti + self.delays[positive_today]
-
-        # Schedule ART Treatment:
-        ART_delay = self.delays[test_uids]
-        for delay in set(ART_delay.tolist()):
-            match_delay = ART_delay == delay
-            sim.diseases[self.disease].schedule_ART_treatment(test_uids[match_delay], sim.ti, period=delay)
+        #
+        # # Schedule ART Treatment:
+        # ART_delay = self.delays[test_uids]
+        # for delay in set(ART_delay.tolist()):
+        #     match_delay = ART_delay == delay
+        #     sim.diseases[self.disease].schedule_ART_treatment(test_uids[match_delay], sim.ti, period=delay)
 
         # Logging
         self.n_positive[sim.ti] = len(positive_today)
@@ -491,6 +491,7 @@ class HIV_testing(ss.Intervention):
         self.test_probs[self._scheduled_tests[sim.ti]] = 1  # People scheduled to test (e.g. via contact tracing) are guaranteed to test
         self.test_probs[sim.diseases[self.disease].diagnosed] = 0  # People already diagnosed don't test again
         self.test_probs[sim.diseases[self.disease].dead] = 0  # Dead people don't get tested
+
         test_uids = ss.true(np.random.random(self.test_probs.shape) < self.test_probs)  # Finally, calculate who actually tests
         return test_uids
 
@@ -764,7 +765,7 @@ class test_ART(ss.Intervention):
             self.results += ss.Result(self.name, 'status_' + str(uid), sim.npts, dtype=np.dtype(('U', 10)))
             self.results += ss.Result(self.name, 'ART_status_' + str(uid), sim.npts, dtype=np.dtype(('U', 10)))
             self.results += ss.Result(self.name, 'cd4_count_' + str(uid), sim.npts, dtype=float, scale=False)
-            self.results += ss.Result(self.name, 'viral_load_' + str(uid), sim.npts, dtype=float, scale=False)
+            self.results += ss.Result(self.name, 'transmission_' + str(uid), sim.npts, dtype=float, scale=False)
 
         return
 
@@ -776,7 +777,6 @@ class test_ART(ss.Intervention):
         history_df = pd.DataFrame.from_dict(self.results)
         history_df.to_csv("viral_histories.csv")
         return
-
 
     def apply(self, sim):
         """
@@ -807,13 +807,12 @@ class test_ART(ss.Intervention):
                     ART_status = 'not_on_ART'
 
                 self.results['cd4_count_' + str(uid)][sim.ti] = sim.diseases[self.disease].cd4[uid]
-                self.results['viral_load_' + str(uid)][sim.ti] = sim.diseases[self.disease].virus[uid]
                 self.results['ART_status_' + str(uid)][sim.ti] = ART_status
                 self.results['status_' + str(uid)][sim.ti] = 'alive'
+                self.results['transmission_' + str(uid)][sim.ti] = sim.diseases[self.disease].rel_trans[uid]
 
             else:
                 self.results['cd4_count_' + str(uid)][sim.ti] = np.nan
-                self.results['viral_load_' + str(uid)][sim.ti] = np.nan
                 self.results['status_' + str(uid)][sim.ti] = 'dead'
 
         return
