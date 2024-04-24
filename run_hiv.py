@@ -55,21 +55,21 @@ def plot_viral_dynamics(output, save_agents):
     for index, agent in enumerate(save_agents):
         fig, ax = plt.subplots(1, 2, figsize=(25, 8))
         df_this_agent = output[output.columns[output.columns.str.contains('_' + str(agent))]].dropna()
-        sns.scatterplot(ax=ax[0], x=df_this_agent.index, y="viral_load_" + str(agent), data = df_this_agent, hue='ART_status_' + str(agent))
+        sns.scatterplot(ax=ax[0], x=df_this_agent.index, y="transmission_" + str(agent), data = df_this_agent, hue='ART_status_' + str(agent))
         sns.scatterplot(ax=ax[1], x=df_this_agent.index, y="cd4_count_" + str(agent), data=df_this_agent, hue='ART_status_' + str(agent))
 
         ax[0].set_xlabel('Time (months)')
         # ax[0].set_yscale('log')
-        ax[0].set_ylim([0, 1])
+        ax[0].set_ylim([0, 7])
         ax[0].set_xlim([0, len(output)])
-        ax[0].set_ylabel('Viral load')
-        ax[0].set_title('Viral load')
+        ax[0].set_ylabel('Transmission probability')
+        ax[0].set_title('Transmission probability')
 
         # CD4-count
         ax[1].set_xlabel('Time (months)')
         ax[1].set_ylabel('CD4-count')
         ax[1].set_title('CD4-count')
-        ax[1].set_ylim([0, 1])
+        ax[1].set_ylim([0, 1000])
         ax[1].set_xlim([0, len(output)])
 
         ax[0].legend()
@@ -134,6 +134,7 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
     hiv = HIV()
     hiv.pars['beta'] = {'structuredsexual': [0.95, 0.95], 'maternal': [0.08, 0.5]}
     hiv.pars['init_prev'] = ss.bernoulli(p=0.3)
+    hiv.pars['cd4_start_mean'] = 800
     # hiv.pars['rel_trans']['latent_temp'] = latent_trans
     # hiv.pars['rel_trans']['latent_long'] = latent_trans
 

@@ -5,6 +5,7 @@ Define default HIV disease module and related interventions
 import numpy as np
 import sciris as sc
 import starsim as ss
+import pandas as pd
 from collections import defaultdict
 
 __all__ = ['HIV']
@@ -19,9 +20,10 @@ class HIV(ss.Infection):
             ss.State('ti_art', int, ss.INT_NAN),
             ss.State('ti_stop_art', float, np.nan),
             ss.State('n_start_ART', int, 0),
+            ss.State('cd4_start', float, np.nan),
             ss.State('max_n_start_ART', float, np.nan),
             # ss.State('cd4', float, 500),  # cells/uL
-            ss.State('cd4', float, 1),  #
+            ss.State('cd4', float, np.nan),  #
             ss.State('infected_cells', float, 0),  # cells per uL
             ss.State('virus', float, 0),  #
             ss.State('viral_load', float, 0),  # RNA copies/mL
@@ -38,16 +40,17 @@ class HIV(ss.Infection):
         )
 
         pars = ss.omergeleft(pars,
+                             cd4_start_mean=500,
                              cd4_min=100,
                              cd4_max=500,
                              cd4_rate=5,
                              init_prev=0.05,
                              eff_condoms=0.7,
-                             ART_prob=1,
+                             ART_prob=0.9,
                              n_ART_start= ss.normal(loc=5, scale=3), # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
                              duration_on_ART=ss.normal(loc=18, scale=5), # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
-                             duration_off_ART=ss.normal(loc=18, scale=5), # TODO find information on this
-                             end_on_ART_prob=1, # Probability to remain on ART after max stops
+                             duration_off_ART=ss.normal(loc=36, scale=5), # TODO find information on this
+                             end_on_ART_prob=1, # Probability to remain on ART after max stops (unless dead earlier)
                              art_efficacy=0.96,
                              death_prob=0.05
                              )
@@ -66,6 +69,13 @@ class HIV(ss.Infection):
         self.pars.transmission_timecourse = self.get_transmission_timecouse()
 
         return
+
+    def initialize(self, sim=None):
+        super().initialize(sim)
+        self.cd4_start[sim.people.uid] = ss.normal(loc=self.pars.cd4_start_mean, scale=100).initialize().rvs(len(sim.people))
+        self.cd4[sim.people.uid] = self.cd4_start[sim.people.uid]
+        return
+
 
     @property
     def symptomatic(self):
@@ -91,7 +101,7 @@ class HIV(ss.Infection):
         cd4_timecourse_data = [(0, 1), (0.5, 600/1000), (1, 700/1000), (1 * 12, 700/1000), (10*12, 0)]  # in months
 
         viral_load_timecourse = self._interpolate(viral_load_timecourse_data, np.arange(0, 8*12))
-        cd4_timecourse = self._interpolate(cd4_timecourse_data, np.arange(0, 10*12))
+        cd4_timecourse = self._interpolate(cd4_timecourse_data, np.arange(0, 10*12+1))
 
         return viral_load_timecourse, cd4_timecourse
 
@@ -100,10 +110,17 @@ class HIV(ss.Infection):
         assert len({x[0] for x in vals}) == len(vals)  # Make sure time points are unique
         return np.interp(t, [x[0] for x in vals], [x[1] for x in vals], left=vals[0][1], right=vals[-1][1])
 
+    def update_cd4_starts(self, sim, uids):
+
+        self.cd4_start[uids] = ss.normal(loc=self.pars.cd4_start_mean, scale=1).initialize().rvs(len(uids))
+        self.cd4[uids] = self.cd4_start[uids]
+        return
 
     def update_pre(self, sim):
         """
         """
+        # Update cd4 start for new agents:
+        self.update_cd4_starts(sim, uids=self.cd4_start[pd.isna(self.cd4_start)].uid) # TODO probably not the best place?
 
         infected_uids = sim.people.alive & self.infected
         infected_uids_onART = sim.people.alive & self.infected & self.on_art
@@ -115,23 +132,32 @@ class HIV(ss.Infection):
 
         # Update viral load and cd4 count:
         duration_since_infection = sim.ti - self.ti_infected[infected_uids_not_onART]
-        duration_since_infection = np.minimum(duration_since_infection, len(self.pars.transmission_timecourse) - 1).astype(int)
+        duration_since_infection = np.minimum(duration_since_infection, len(self.pars.cd4_timecourse) - 1).astype(int)
+        duration_since_untreated = sim.ti - self.ti_since_untreated[infected_uids_not_onART]
+        duration_since_untreated = np.minimum(duration_since_untreated, len(self.pars.cd4_timecourse) - 1).astype(int)
+        duration_since_infection_transmission = np.minimum(duration_since_infection, len(self.pars.transmission_timecourse) - 1).astype(int)
         duration_since_onART = sim.ti - self.ti_art[infected_uids_onART]
-        # Assumption: Art impact increases linearly over 6 months
-        duration_since_onART = np.minimum(duration_since_onART, 6)
-        # Cannot have negative durations, can disable this check for performance if required
-        assert not np.any(duration_since_infection < 0)
-        assert not np.any(duration_since_onART < 0)
 
-        cd4_count = self.pars.cd4_timecourse[duration_since_infection]
+        # Assumption: Art impact increases linearly over 6 months
+        duration_since_onART = np.minimum(duration_since_onART, 3*12)
+        duration_since_onART_transmission = np.minimum(duration_since_onART, 6)
+        # Cannot have negative durations, can disable this check for performance if required
+        # assert not np.any(duration_since_infection < 0)
+        # assert not np.any(duration_since_onART < 0)
+
+        cd4_count_changes = np.diff(self.pars.cd4_timecourse)
+        cd4_count = self.cd4[infected_uids_not_onART] + cd4_count_changes[duration_since_untreated-1] * self.cd4_start[infected_uids_not_onART]
+        # print(self.ti_since_untreated[5], sim.ti - self.ti_since_untreated[5], self.cd4_start[5], self.cd4[5], cd4_count[5])
         self.cd4[infected_uids_not_onART] = cd4_count
 
         # Update viral load and cd4 counts for agents on ART
-        self.cd4[infected_uids_onART] = self.cd4[infected_uids_onART] + duration_since_onART * (1-self.cd4[infected_uids_onART]) / 3 # Assumption: back to 1 in 3 months
+        if sum(infected_uids_onART)>0:
+            self.cd4[infected_uids_onART] = np.minimum(self.cd4_start[infected_uids_onART],
+                                                   self.cd4[infected_uids_onART] + duration_since_onART * 15.584 - 0.2113 * duration_since_onART**2) # Assumption: back to 1 in 3 months
 
         # Update transmission
-        self.rel_trans[infected_uids_not_onART] = self.pars.transmission_timecourse[duration_since_infection]
-        self.rel_trans[infected_uids_onART] = 1 - self.art_transmission_reduction * duration_since_onART
+        self.rel_trans[infected_uids_not_onART] = self.pars.transmission_timecourse[duration_since_infection_transmission]
+        self.rel_trans[infected_uids_onART] = 1 - self.art_transmission_reduction * duration_since_onART_transmission
 
         can_die = ss.true(sim.people.alive & sim.people.hiv.infected)
         hiv_deaths = self.pars.death_prob.filter(can_die)
@@ -144,6 +170,7 @@ class HIV(ss.Infection):
         self.diagnosed[diagnosed] = True
 
         # Schedule ART for diagnosed cases:
+        self.max_n_start_ART[diagnosed] = self.pars.n_ART_start.rvs(len(diagnosed)).astype(int)  # TODO define integer normal distribution
         self.schedule_ART_treatment(diagnosed, sim.ti)
 
         return
@@ -215,7 +242,7 @@ class HIV(ss.Infection):
         self.ti_infected[uids] = sim.ti
         self.ti_infectious[uids] = sim.ti  + 14
         self.ti_since_untreated[uids] = sim.ti
-        self.max_n_start_ART[uids] = self.pars.n_ART_start.rvs(len(uids)).astype(int) # TODO define integer normal distribution
+
         return
 
     def set_congenital(self, sim, target_uids, source_uids):
@@ -292,6 +319,9 @@ class HIV(ss.Infection):
                 self.n_start_ART[uid] += 1
 
                 if self.n_start_ART[uid] == self.max_n_start_ART[uid]:
+
+                    if uid == 11:
+                        print('T')
                     # Decide whether agent should stay on ART for the remaining sim or stop ART one last time:
                     if np.random.random(1) > self.pars.end_on_ART_prob:
                         self.ti_stop_art[uid] = sim.ti + int(self.pars.duration_on_ART.rvs(1))

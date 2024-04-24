@@ -805,7 +805,7 @@ class test_ART(ss.Intervention):
                     ART_status = 'on_ART'
                 else:
                     ART_status = 'not_on_ART'
-
+                self.results['cd4_count_' + str(uid)][0] = sim.diseases[self.disease].cd4_start[uid]
                 self.results['cd4_count_' + str(uid)][sim.ti] = sim.diseases[self.disease].cd4[uid]
                 self.results['ART_status_' + str(uid)][sim.ti] = ART_status
                 self.results['status_' + str(uid)][sim.ti] = 'alive'
