@@ -48,8 +48,8 @@ class HIV(ss.Infection):
                              eff_condoms=0.7,
                              ART_prob=0.9,
                              n_ART_start= ss.normal(loc=5, scale=3), # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
-                             duration_on_ART=ss.normal(loc=18, scale=5), # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
-                             duration_off_ART=ss.normal(loc=36, scale=5), # TODO find information on this
+                             duration_on_ART=ss.normal(loc=18, scale=10), # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
+                             duration_off_ART=ss.normal(loc=18, scale=5), # TODO find information on this
                              end_on_ART_prob=1, # Probability to remain on ART after max stops (unless dead earlier)
                              art_efficacy=0.96,
                              death_prob=0.05
@@ -141,17 +141,14 @@ class HIV(ss.Infection):
         # Assumption: Art impact increases linearly over 6 months
         duration_since_onART = np.minimum(duration_since_onART, 3*12)
         duration_since_onART_transmission = np.minimum(duration_since_onART, 6)
-        # Cannot have negative durations, can disable this check for performance if required
-        # assert not np.any(duration_since_infection < 0)
-        # assert not np.any(duration_since_onART < 0)
 
         cd4_count_changes = np.diff(self.pars.cd4_timecourse)
         cd4_count = self.cd4[infected_uids_not_onART] + cd4_count_changes[duration_since_untreated-1] * self.cd4_start[infected_uids_not_onART]
-        # print(self.ti_since_untreated[5], sim.ti - self.ti_since_untreated[5], self.cd4_start[5], self.cd4[5], cd4_count[5])
         self.cd4[infected_uids_not_onART] = cd4_count
 
+
         # Update viral load and cd4 counts for agents on ART
-        if sum(infected_uids_onART)>0:
+        if sum(infected_uids_onART.tolist()) > 0:
             self.cd4[infected_uids_onART] = np.minimum(self.cd4_start[infected_uids_onART],
                                                    self.cd4[infected_uids_onART] + duration_since_onART * 15.584 - 0.2113 * duration_since_onART**2) # Assumption: back to 1 in 3 months
 
