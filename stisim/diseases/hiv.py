@@ -154,12 +154,19 @@ class HIV(ss.Infection):
 
         # Update viral load and cd4 counts for agents on ART
         if sum(infected_uids_onART.tolist()) > 0:
-            self.cd4[infected_uids_onART] = np.minimum(self.cd4_start[infected_uids_onART],
-                                                   self.cd4[infected_uids_onART] + duration_since_onART * 15.584 - 0.2113 * duration_since_onART**2) # Assumption: back to 1 in 3 months
+            self.cd4[infected_uids_onART] = np.minimum(self.cd4_start[infected_uids_onART], self.cd4[infected_uids_onART] + duration_since_onART * 15.584 - 0.2113 * duration_since_onART**2) # Assumption: back to 1 in 3 months
 
-        # Update transmission
-        self.rel_trans[infected_uids_not_onART] = self.pars.transmission_timecourse[duration_since_infection_transmission]
+        # Update transmission for agents not on ART with a cd4 count above 200:
+        infected_uids_not_onART_cd4_above_200 = infected_uids_not_onART & (self.cd4 >= 200)
+        self.rel_trans[infected_uids_not_onART_cd4_above_200] = self.pars.transmission_timecourse[duration_since_infection_transmission[ss.true(infected_uids_not_onART_cd4_above_200)]]
+        # Update transmission for agents on ART
         self.rel_trans[infected_uids_onART] = 1 - self.art_transmission_reduction * duration_since_onART_transmission
+
+        # Overwrite tranmissibility for agents whose CD4 counts are below 200:
+        for uid in self.cd4[self.cd4 < 200].uid:
+            # Time to drop from 200 to 50:
+            ti_200_to_50 = int(150 / (cd4_count_changes[-1] * self.cd4_start[uid]) * (-1))
+            self.rel_trans[uid] = np.minimum(self.rel_trans[uid] + (6-1)/ti_200_to_50, 6)
 
         can_die = ss.true(sim.people.alive & sim.people.hiv.infected)
         hiv_deaths = self.pars.death_prob.filter(can_die)
@@ -176,10 +183,6 @@ class HIV(ss.Infection):
         self.schedule_ART_treatment(diagnosed, sim.ti)
 
         return
-
-    def update_post(self, sim):
-        self.check_start_ART_treatment(sim.ti)
-        self.check_stop_ART_treatment(sim.ti)
 
     def init_results(self, sim):
         """
@@ -338,8 +341,15 @@ class HIV(ss.Infection):
         self.ti_stop_art[stop_uids] = np.nan
         self.ti_since_untreated[stop_uids] = sim.ti
 
+
         # Schedule ART treatment for a subset of agents:
         uids_pending_ART = stop_uids[self.n_start_ART[stop_uids] < self.max_n_start_ART[stop_uids]]
         for uid in uids_pending_ART:
             self.schedule_ART_treatment(np.array([uid]), int(sim.ti + self.pars.duration_off_ART.rvs(1)))
+
+        return
+
+    def ART_coverage_correction(self, sim):
+        # TODO
+        return
 

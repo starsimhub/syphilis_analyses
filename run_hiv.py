@@ -55,8 +55,10 @@ def plot_viral_dynamics(output, save_agents):
     for index, agent in enumerate(save_agents):
         fig, ax = plt.subplots(1, 2, figsize=(25, 8))
         df_this_agent = output[output.columns[output.columns.str.contains('_' + str(agent))]].dropna()
-        sns.scatterplot(ax=ax[0], x=df_this_agent.index, y="transmission_" + str(agent), data = df_this_agent, hue='ART_status_' + str(agent))
-        sns.scatterplot(ax=ax[1], x=df_this_agent.index, y="cd4_count_" + str(agent), data=df_this_agent, hue='ART_status_' + str(agent))
+        sns.scatterplot(ax=ax[0], x=df_this_agent.index, y="transmission_" + str(agent), data=df_this_agent,
+                        hue='ART_status_' + str(agent))
+        sns.scatterplot(ax=ax[1], x=df_this_agent.index, y="cd4_count_" + str(agent), data=df_this_agent,
+                        hue='ART_status_' + str(agent))
 
         ax[0].set_xlabel('Time (months)')
         # ax[0].set_yscale('log')
@@ -120,13 +122,13 @@ def plot_hiv(sim_output):
     ax[4, 1].plot(sim_output.index, sim_output['hiv.cum_diagnoses'])
     ax[4, 1].set_title('Cumulative Diagnoses')
 
-
     fig.tight_layout()
     # plt.show()
     sc.savefig("figures/hiv_plots.png", dpi=100)
 
 
-def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, latent_trans=0.075, save_agents=np.array([0])):
+def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, latent_trans=0.075,
+                 save_agents=np.array([0])):
     """
     Make a sim with HIV
     """
@@ -156,6 +158,7 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
         start=1990,
         n_years=20,
         people=ppl,
+        remove_dead=1,  # How many timesteps to go between removing dead agents (0 to not remove)
         diseases=hiv,
         networks=ss.ndict(sexual, maternal),
         interventions=[HIV_testing(disease='hiv',
@@ -186,14 +189,15 @@ def run_hiv(location='zimbabwe', total_pop=100e6, dt=1.0, n_agents=500, save_age
 
 
 if __name__ == '__main__':
-
     location = 'zimbabwe'
     total_pop = dict(
         nigeria=93963392,
         zimbabwe=9980999,
     )[location]
     save_agents = np.arange(0, 40)
-    sim, output = run_hiv(location=location, total_pop=total_pop, dt=1 / 12, n_agents=int(10e3), save_agents=save_agents)
+
+    sim, output = run_hiv(location=location, total_pop=total_pop, dt=1 / 12, n_agents=int(10e3),
+                          save_agents=save_agents)
     output.to_csv("HIV_output.csv")
 
     # Call method in test_ART intervention:
