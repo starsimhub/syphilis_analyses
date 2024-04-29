@@ -45,12 +45,14 @@ class HIV(ss.Infection):
                              cd4_max=500,
                              cd4_rate=5,
                              init_prev=0.05,
+                             primary_acute_inf_dur=2.9,
                              eff_condoms=0.7,
-                             ART_prob=0.9,
-                             n_ART_start= ss.normal(loc=5, scale=3), # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
-                             duration_on_ART=ss.normal(loc=18, scale=10), # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
+                             ART_coverages=None,
+                             ART_prob=0.0,
+                             n_ART_start=ss.normal(loc=5, scale=3), # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
+                             duration_on_ART=ss.normal(loc=18, scale=5), # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
                              duration_off_ART=ss.normal(loc=18, scale=5), # TODO find information on this
-                             end_on_ART_prob=1, # Probability to remain on ART after max stops (unless dead earlier)
+                             end_on_ART_prob=1,# Probability to remain on ART after max stops (unless dead earlier)
                              art_efficacy=0.96,
                              death_prob=0.05
                              )
@@ -90,8 +92,11 @@ class HIV(ss.Infection):
 
     def get_transmission_timecouse(self):
 
-        transmission_timecourse_data = [(0, 0), (1, 6), (2, 1)]
-        transmission_timecourse = self._interpolate(transmission_timecourse_data, np.arange(0, 2+1))
+        transmission_timecourse_data = [(0, 0),
+                                        (1, 6),
+                                        (self.pars.primary_acute_inf_dur, 6),
+                                        (np.ceil(self.pars.primary_acute_inf_dur), 1)]
+        transmission_timecourse = self._interpolate(transmission_timecourse_data, np.arange(0, np.ceil(self.pars.primary_acute_inf_dur)+1))
 
         return transmission_timecourse
 
@@ -316,14 +321,12 @@ class HIV(ss.Infection):
                 self.n_start_ART[uid] += 1
 
                 if self.n_start_ART[uid] == self.max_n_start_ART[uid]:
-
-                    if uid == 11:
-                        print('T')
                     # Decide whether agent should stay on ART for the remaining sim or stop ART one last time:
                     if np.random.random(1) > self.pars.end_on_ART_prob:
                         self.ti_stop_art[uid] = sim.ti + int(self.pars.duration_on_ART.rvs(1))
                 else:
                     self.ti_stop_art[uid] = sim.ti + int(self.pars.duration_on_ART.rvs(1))
+        return
 
     def check_stop_ART_treatment(self, sim):
         """
