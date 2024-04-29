@@ -9,6 +9,7 @@ import starsim as ss
 
 __all__ = ['Syphilis']
 
+
 class Syphilis(ss.Infection):
 
     def __init__(self, pars=None):
