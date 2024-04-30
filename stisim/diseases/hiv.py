@@ -152,7 +152,7 @@ class HIV(ss.Infection):
 
         cd4_count_changes = np.diff(self.pars.cd4_timecourse)
         cd4_count = self.cd4[infected_uids_not_onART] + cd4_count_changes[duration_since_untreated-1] * self.cd4_start[infected_uids_not_onART]
-        self.cd4[infected_uids_not_onART] = np.maximum(cd4_count, 0)
+        self.cd4[infected_uids_not_onART] = np.maximum(cd4_count, 1)
 
         # Update viral load and cd4 counts for agents on ART
         if sum(infected_uids_onART.tolist()) > 0:
@@ -354,7 +354,12 @@ class HIV(ss.Infection):
             cd4_counts_onART = self.cd4[infected_uids_onART]
             cd4_counts_onART.sort(axis=0)
             # Grab the last n agents with the highest counts
-            stop_uids = cd4_counts_onART.uid[-n_agents_to_stop_ART:]
+            probabilities = (cd4_counts_onART / np.sum(cd4_counts_onART)).values
+            # Probabilities are increasing with CD4 count
+            uids = cd4_counts_onART.uid
+            stop_uids = np.random.choice(uids, n_agents_to_stop_ART, p=probabilities, replace=False) # TODO eventually put this into a distribution module?
+
+
             self.on_art[stop_uids] = False
             self.ti_art[stop_uids] = np.nan
             self.ti_stop_art[stop_uids] = np.nan
@@ -366,8 +371,10 @@ class HIV(ss.Infection):
             n_agents_to_start_ART = int(ART_coverage_this_year - len(ss.true(infected_uids_onART)))
             cd4_counts_not_onART = self.cd4[infected_uids_not_onART]
             cd4_counts_not_onART.sort(axis=0)
-            # Grab the first n agents with the lowest counts
-            start_uids = cd4_counts_not_onART.uid[:n_agents_to_start_ART]
+            probabilities = (cd4_counts_not_onART/np.sum(cd4_counts_not_onART)).values
+            # Probabilities are increasing with CD4 count, therefore flip uid array:
+            uids = np.flipud(cd4_counts_not_onART.uid)
+            start_uids = np.random.choice(uids, n_agents_to_start_ART, p=probabilities, replace=False) # TODO eventually put this into a distribution module?
 
             # Put them on ART
             self.on_art[start_uids] = True
