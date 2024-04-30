@@ -12,6 +12,7 @@ import seaborn as sns
 from stisim.networks import StructuredSexual
 from stisim.diseases.hiv import HIV
 from stisim.interventions import ART, HIV_testing, test_ART
+from matplotlib.ticker import FuncFormatter
 
 quick_run = False
 ss.options['multirng'] = False
@@ -90,7 +91,20 @@ def plot_hiv(sim_output):
     - HIV prevalence, HIV prevalence in FSW
     - n on ART
     """
-    fig, ax = plt.subplots(5, 2, figsize=(20, 15))
+
+    ART_coverages_raw = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Testing & treatment',
+                                      skiprows=28).iloc[0:1, 2:43]
+    tivec = np.arange(start=1990, stop=2021 + 1 / 12, step=1 / 12)
+    pop_scale = total_pop / int(10e3)
+    ART_coverages_df = pd.DataFrame({"Years": tivec,
+                                     "Value": (np.interp(tivec,
+                                                         ART_coverages_raw.columns.values[
+                                                             ~pd.isna(ART_coverages_raw.values)[0]].astype(int),
+                                                         ART_coverages_raw.values[
+                                                             ~pd.isna(ART_coverages_raw.values)]) / pop_scale).astype(
+                                         int)})
+
+    fig, ax = plt.subplots(6, 2, figsize=(20, 15))
 
     # sim_output = sim_output.iloc[1:]
     ax[0, 0].plot(sim_output.iloc[1:].index, sim_output.iloc[1:]['hiv.new_infections'])
@@ -100,8 +114,10 @@ def plot_hiv(sim_output):
 
     ax[1, 0].plot(sim_output.iloc[1:].index, sim_output.iloc[1:]['deaths.new'])
     ax[1, 0].set_title('New Deaths')
-    ax[1, 1].plot(sim_output.index, sim_output['deaths.cumulative'])
-    ax[1, 1].set_title('Cumulative Deaths')
+    # ax[1, 1].plot(sim_output.index, sim_output['deaths.cumulative'])
+    # ax[1, 1].set_title('Cumulative Deaths')
+    ax[1, 1].plot(sim_output.index, sim_output['hiv.new_deaths'])
+    ax[1, 1].set_title('HIV Deaths')
 
     ax[2, 0].plot(sim_output.index, sim_output['hiv.prevalence'], label='General Population')
     ax[2, 0].set_title('HIV prevalence')
@@ -112,15 +128,22 @@ def plot_hiv(sim_output):
     ax[2, 0].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_2'], label='Risk Group 2')
     ax[2, 0].legend()
 
-    ax[3, 0].plot(sim_output.iloc[1:].index, sim_output.iloc[1:]['hiv.new_on_art'])
-    ax[3, 0].set_title('New on Art')
-    ax[3, 1].plot(sim_output.index, sim_output['hiv.cum_on_art'])
-    ax[3, 1].set_title('Cumulative ART')
+    ax[3, 0].plot(sim_output.iloc[1:].index, sim_output.iloc[1:]['hiv.n_on_art'], label='Modelled')
+    ax[3, 0].set_title('Number of people on ART (Mio)')
+    ax[3, 0].plot(ART_coverages_df["Years"][1:], ART_coverages_df["Value"][1:] * pop_scale, label="Data")
+    ax[3, 0].legend()
+    ax[3, 0].yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f'{x * 1e-6:0.1f}'))
+    ax[3, 0].set_xlim([2000.0, max(sim_output.iloc[1:].index)])
 
     ax[4, 0].plot(sim_output.iloc[1:].index, sim_output.iloc[1:]['hiv.new_diagnoses'])
     ax[4, 0].set_title('New Diagnoses')
     ax[4, 1].plot(sim_output.index, sim_output['hiv.cum_diagnoses'])
     ax[4, 1].set_title('Cumulative Diagnoses')
+
+    ax[5, 0].plot(sim_output.iloc[1:].index, sim_output.iloc[1:]['n_alive'])
+    ax[5, 0].set_title('Population')
+    ax[5, 0].yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f'{x * 1e-6:0.1f}'))
+    ax[5, 0].set_ylabel('Mio.')
 
     fig.tight_layout()
     # plt.show()
@@ -137,16 +160,17 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
     hiv.pars['beta'] = {'structuredsexual': [0.95, 0.95], 'maternal': [0.08, 0.5]}
     hiv.pars['init_prev'] = ss.bernoulli(p=0.3)
     hiv.pars['cd4_start_mean'] = 800
-    hiv.pars['primary_acute_inf_dur'] = 2.9 # in months
-    # hiv.pars['rel_trans']['latent_temp'] = latent_trans
-    # hiv.pars['rel_trans']['latent_long'] = latent_trans
+    hiv.pars['primary_acute_inf_dur'] = 2.9  # in months
 
     # Read in treatment data:
-    ART_coverages_raw = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Testing & treatment',skiprows=28).iloc[0:1, 2:43]
-    ART_coverages_df = pd.DataFrame({"Years": ART_coverages_raw.columns.values,
-                                     "Value": np.interp(ART_coverages_raw.columns.values.astype(int),
-                                                        ART_coverages_raw.columns.values[~pd.isna(ART_coverages_raw.values)[0]].astype(int),
-                                                        ART_coverages_raw.values[~pd.isna(ART_coverages_raw.values)]).astype(int)})
+    ART_coverages_raw = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Testing & treatment',
+                                      skiprows=28).iloc[0:1, 2:43]
+    tivec = np.arange(start=1990, stop=2021 + 1 / 12, step=1 / 12)
+    pop_scale = total_pop / n_agents
+    ART_coverages_df = pd.DataFrame({"Years": tivec,
+                                     "Value": (np.interp(tivec,
+                                                         ART_coverages_raw.columns.values[~pd.isna(ART_coverages_raw.values)[0]].astype(int),
+                                                         ART_coverages_raw.values[~pd.isna(ART_coverages_raw.values)]) / pop_scale).astype(int)})
     hiv.pars['ART_coverages_df'] = ART_coverages_df
 
     # Make demographic modules
@@ -165,7 +189,7 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
         dt=dt,
         total_pop=total_pop,
         start=1990,
-        n_years=20,
+        n_years=40,
         people=ppl,
         remove_dead=1,  # How many timesteps to go between removing dead agents (0 to not remove)
         diseases=hiv,

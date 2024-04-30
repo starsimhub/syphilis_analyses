@@ -791,7 +791,6 @@ class test_ART(ss.Intervention):
                 sim.diseases[self.disease].ti_since_untreated[uid] = sim.ti
                 sim.diseases[self.disease].susceptible[uid] = False
                 sim.diseases[self.disease].ti_infectious[uid] = sim.ti + 14
-                sim.diseases[self.disease].max_n_start_ART[uid] = sim.diseases[self.disease].pars.n_ART_start.rvs(1).astype(int)
 
                 #if self.stop_ART:
                 #    sim.diseases[self.disease].ti_stop_art[uid] = sim.ti + sim.diseases[self.disease].pars.avg_duration_stop_ART
