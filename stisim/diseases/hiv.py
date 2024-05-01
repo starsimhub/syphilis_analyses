@@ -17,6 +17,7 @@ class HIV(ss.Infection):
         # States
         self.add_states(
             ss.State('on_art', bool, False),
+            ss.State('art_transmission_reduction', float, np.nan),
             ss.State('ti_art', int, ss.INT_NAN),
             ss.State('ti_stop_art', float, np.nan),
             ss.State('cd4_start', float, np.nan),
@@ -57,7 +58,7 @@ class HIV(ss.Infection):
         self.death_prob_data = sc.dcp(self.pars.death_prob)
         self.pars.death_prob = self.make_death_prob
         self._pending_ARTtreatment = defaultdict(list)
-        self.art_transmission_reduction = None
+        # self.art_transmission_reduction = None
 
         return
 
@@ -212,17 +213,34 @@ class HIV(ss.Infection):
         cd4_count_changes = np.diff(self.pars.cd4_timecourse)
         # Update transmission for agents not on ART with a cd4 count above 200:
         infected_uids_not_onART_cd4_above_200 = infected_uids_not_onART & (self.cd4 >= 200)
-        self.rel_trans[infected_uids_not_onART_cd4_above_200] = self.pars.transmission_timecourse[
-            duration_since_infection_transmission[ss.true(infected_uids_not_onART_cd4_above_200)]]
+        transmission_not_onART_cd4_above_200 = self.pars.transmission_timecourse[duration_since_infection_transmission[ss.true(infected_uids_not_onART_cd4_above_200)]]
+        # Randomize:
+        transmission_random_factor = ss.normal(loc=1, scale=self.pars.transmission_sd).initialize().rvs(len(transmission_not_onART_cd4_above_200))
+        self.rel_trans[infected_uids_not_onART_cd4_above_200] = transmission_random_factor * transmission_not_onART_cd4_above_200
+
         # Update transmission for agents on ART
-        self.rel_trans[infected_uids_onART] = 1 - self.art_transmission_reduction * duration_since_onART_transmission
+        # When agents start ART, determine the reduction of transmission (linearly decreasing over 6 months)
+        self.update_transmission_reduction(duration_since_onART_transmission)
+        transmission_onART = np.maximum(1-self.pars.art_efficacy, self.rel_trans[infected_uids_onART] - self.art_transmission_reduction[infected_uids_onART])
+        transmission_random_factor = ss.normal(loc=1, scale=self.pars.transmission_sd).initialize().rvs(len(transmission_onART))
+        self.rel_trans[infected_uids_onART] = transmission_random_factor * transmission_onART
 
-        # Overwrite tranmissibility for agents whose CD4 counts are below 200:
-        for uid in self.cd4[self.cd4 < 200].uid:
-            # Time to drop from 200 to 50:
-            ti_200_to_50 = int(150 / (cd4_count_changes[-1] * self.cd4_start[uid]) * (-1))
-            self.rel_trans[uid] = np.minimum(self.rel_trans[uid] + (6 - 1) / ti_200_to_50, 6)
+        # Overwrite transmission for agents whose CD4 counts are below 200:
+        uids_below_200 = self.cd4 < 200
+        if len(ss.true(uids_below_200)) > 0:
+            ti_200_to_50 = (150 / (cd4_count_changes[-1] * self.cd4_start[uids_below_200]) * (-1)).astype(int)
+            transmission_below_200 = np.minimum(self.rel_trans[uids_below_200] + (6 - 1) / ti_200_to_50, 6)
+            transmission_random_factor = ss.normal(loc=1, scale=self.pars.transmission_sd).initialize().rvs(len(transmission_below_200))
+            self.rel_trans[uids_below_200] = transmission_random_factor * transmission_below_200
 
+        return
+
+    def update_transmission_reduction(self, durs_onART):
+        """
+        Get transmission reductions (to decrease transmission linearly over 6 months)
+        """
+        start_onART_uids = ss.true(durs_onART == 1)
+        self.art_transmission_reduction[start_onART_uids] = (self.rel_trans[start_onART_uids] - (1-self.pars.art_efficacy)) /6
         return
 
     def init_results(self, sim):
