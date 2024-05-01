@@ -8,7 +8,6 @@ import numpy as np
 import pandas as pd
 from collections import defaultdict
 
-
 __all__ = ['Analyzer', 'Intervention']
 
 
@@ -26,10 +25,10 @@ class Analyzer(ss.Module):
 
     def __call__(self, *args, **kwargs):
         return self.apply(*args, **kwargs)
-    
+
     def initialize(self, sim):
         return super().initialize(sim)
-    
+
     def apply(self, sim):
         pass
 
@@ -52,10 +51,10 @@ class Intervention(ss.Module):
 
     def __call__(self, *args, **kwargs):
         return self.apply(*args, **kwargs)
-    
+
     def initialize(self, sim):
         return super().initialize(sim)
-    
+
     def apply(self, sim, *args, **kwargs):
         raise NotImplementedError
 
@@ -92,6 +91,7 @@ class Intervention(ss.Module):
 # %% Template classes for routine and campaign delivery
 __all__ += ['RoutineDelivery', 'CampaignDelivery']
 
+
 class RoutineDelivery(Intervention):
     """
     Base class for any intervention that uses routine delivery; handles interpolation of input years.
@@ -123,7 +123,7 @@ class RoutineDelivery(Intervention):
             self.end_year = self.years[-1]
 
         # More validation
-        if not(any(np.isclose(self.start_year, sim.yearvec)) and any(np.isclose(self.end_year, sim.yearvec))):
+        if not (any(np.isclose(self.start_year, sim.yearvec)) and any(np.isclose(self.end_year, sim.yearvec))):
             errormsg = 'Years must be within simulation start and end dates.'
             raise ValueError(errormsg)
 
@@ -132,10 +132,10 @@ class RoutineDelivery(Intervention):
 
         # Determine the timepoints at which the intervention will be applied
         self.start_point = sc.findfirst(sim.yearvec, self.start_year)
-        self.end_point   = sc.findfirst(sim.yearvec, self.end_year) + adj_factor
-        self.years       = sc.inclusiverange(self.start_year, self.end_year)
-        self.timepoints  = sc.inclusiverange(self.start_point, self.end_point)
-        self.yearvec     = np.arange(self.start_year, self.end_year + adj_factor, sim.dt)
+        self.end_point = sc.findfirst(sim.yearvec, self.end_year) + adj_factor
+        self.years = sc.inclusiverange(self.start_year, self.end_year)
+        self.timepoints = sc.inclusiverange(self.start_point, self.end_point)
+        self.yearvec = np.arange(self.start_year, self.end_year + adj_factor, sim.dt)
 
         # Get the probability input into a format compatible with timepoints
         if len(self.years) != len(self.prob):
@@ -233,6 +233,7 @@ class BaseScreening(BaseTest):
     Args:
         kwargs (dict): passed to BaseTest
     """
+
     def check_eligibility(self, sim):
         """
         Check eligibility
@@ -261,6 +262,7 @@ class BaseTriage(BaseTest):
     Args:
         kwargs (dict): passed to BaseTest
     """
+
     def check_eligibility(self, sim):
         return sc.promotetoarray(self.eligibility(sim))
 
@@ -363,12 +365,14 @@ class campaign_triage(BaseTriage, CampaignDelivery):
         BaseTriage.initialize(self, sim)
         return
 
+
 class HIV_testing(ss.Intervention):
     """
     Probability-based testing
     """
 
-    def __init__(self, symp_prob, sensitivity, disease, *args, test_delay_mean=None, vac_symp_prob=np.nan, asymp_prob=np.nan, exclude=None, test_delay=None, **kwargs):
+    def __init__(self, symp_prob, sensitivity, disease, *args, test_delay_mean=None, vac_symp_prob=np.nan,
+                 asymp_prob=np.nan, exclude=None, test_delay=None, **kwargs):
         """
         Args:
             symp_prob:
@@ -383,7 +387,8 @@ class HIV_testing(ss.Intervention):
 
         super().__init__(*args, **kwargs)
 
-        assert (test_delay_mean is None) != (test_delay is None), "Either the mean test delay or the absolute test delay must be specified"
+        assert (test_delay_mean is None) != (
+                    test_delay is None), "Either the mean test delay or the absolute test delay must be specified"
         self.results = ss.Results(self.name)
 
         if asymp_prob == np.nan:
@@ -432,7 +437,8 @@ class HIV_testing(ss.Intervention):
             # the same day they are notified)
 
             not_dead_diag = sim.diseases[self.disease].diagnosed | sim.people.dead
-            uids = uids[np.logical_not(not_dead_diag[uids])]  # Only test people that haven't been diagnosed and are alive
+            uids = uids[
+                np.logical_not(not_dead_diag[uids])]  # Only test people that haven't been diagnosed and are alive
             self._test(sim, uids)
         else:
             self._scheduled_tests[t] += uids.tolist()
@@ -451,14 +457,16 @@ class HIV_testing(ss.Intervention):
         other_test_uids = test_uids[~sim.diseases[self.disease].symptomatic[test_uids]]
 
         if len(symp_test_uids):
-            sim.diseases[self.disease].test(symp_test_uids, sim.ti, test_sensitivity=self.sensitivity['symptomatic'], loss_prob=0, test_delay=np.inf)  # Actually test people with mild symptoms
+            sim.diseases[self.disease].test(symp_test_uids, sim.ti, test_sensitivity=self.sensitivity['symptomatic'],
+                                            loss_prob=0, test_delay=np.inf)  # Actually test people with mild symptoms
         if len(other_test_uids):
-            sim.diseases[self.disease].test(other_test_uids, sim.ti, test_sensitivity=self.sensitivity['symptomatic'], loss_prob=0, test_delay=np.inf)  # Actually test people without symptoms
+            sim.diseases[self.disease].test(other_test_uids, sim.ti, test_sensitivity=self.sensitivity['symptomatic'],
+                                            loss_prob=0, test_delay=np.inf)  # Actually test people without symptoms
 
         if self.test_delay is not None:
             self.delays[test_uids] = self.test_delay
         else:
-            self.delays[test_uids] = np.maximum(1, np.random.poisson(self.test_delay_mean,  len(test_uids)))
+            self.delays[test_uids] = np.maximum(1, np.random.poisson(self.test_delay_mean, len(test_uids)))
 
         # Update the date diagnosed
         positive_today = ss.true(sim.diseases[self.disease].ti_pos_test[test_uids] == sim.ti)
@@ -475,7 +483,7 @@ class HIV_testing(ss.Intervention):
         self.n_positive[sim.ti] = len(positive_today)
 
         # Store tests performed by this intervention
-        #ToDO: would need adjusting for population changes?
+        # ToDO: would need adjusting for population changes?
         n_tests = len(test_uids) * sim.pars["pop_scale"]
         self.n_tests[sim.ti] += n_tests
         self.results["new_tests"][sim.ti] = n_tests  # Update total test count
@@ -483,16 +491,20 @@ class HIV_testing(ss.Intervention):
     def select_people(self, sim):
         # First, insert any fixed test probabilities
         self.test_probs.values = np.ones(len(sim.people)) * self.asymp_prob
-        self.test_probs[sim.diseases[self.disease].symptomatic] = self.symp_prob  # Symptomatic people test at a higher rate
+        self.test_probs[
+            sim.diseases[self.disease].symptomatic] = self.symp_prob  # Symptomatic people test at a higher rate
         if self.exclude is not None:
-            self.test_probs[self.exclude] = 0  # If someone is excluded, then they shouldn't test via `apply()` (but can still test via a scheduled test)
+            self.test_probs[
+                self.exclude] = 0  # If someone is excluded, then they shouldn't test via `apply()` (but can still test via a scheduled test)
         if sim.pars.remove_dead and len(self._scheduled_tests[sim.ti]) > 0:
             self.clean_uid(sim)
-        self.test_probs[self._scheduled_tests[sim.ti]] = 1  # People scheduled to test (e.g. via contact tracing) are guaranteed to test
+        self.test_probs[self._scheduled_tests[
+            sim.ti]] = 1  # People scheduled to test (e.g. via contact tracing) are guaranteed to test
         self.test_probs[sim.diseases[self.disease].diagnosed] = 0  # People already diagnosed don't test again
         self.test_probs[sim.diseases[self.disease].dead] = 0  # Dead people don't get tested
 
-        test_uids = ss.true(np.random.random(self.test_probs.shape) < self.test_probs)  # Finally, calculate who actually tests
+        test_uids = ss.true(
+            np.random.random(self.test_probs.shape) < self.test_probs)  # Finally, calculate who actually tests
         return test_uids
 
     def apply(self, sim):
@@ -508,7 +520,7 @@ class HIV_testing(ss.Intervention):
         self._scheduled_tests[sim.ti] = [uid for uid in self._scheduled_tests[sim.ti] if uid in sim.people.uid]
 
 
-#%% Treatment interventions
+# %% Treatment interventions
 __all__ += ['BaseTreatment', 'treat_num', 'ART']
 
 
@@ -522,6 +534,7 @@ class BaseTreatment(Intervention):
          eligibility    (inds/callable) : indices OR callable that returns inds
          kwargs         (dict)          : passed to Intervention()
     """
+
     def __init__(self, product=None, prob=None, eligibility=None, **kwargs):
         super().__init__(**kwargs)
         self.prob = sc.promotetoarray(prob)
@@ -532,7 +545,8 @@ class BaseTreatment(Intervention):
 
     def initialize(self, sim):
         Intervention.initialize(self, sim)
-        self.outcomes = {k: np.array([], dtype=int) for k in ['unsuccessful', 'successful']} # Store outcomes on each timestep
+        self.outcomes = {k: np.array([], dtype=int) for k in
+                         ['unsuccessful', 'successful']}  # Store outcomes on each timestep
         return
 
     def get_accept_inds(self, sim):
@@ -572,6 +586,7 @@ class treat_num(BaseTreatment):
     Args:
          max_capacity (int): maximum number who can be treated each timestep
     """
+
     def __init__(self, max_capacity=None, **kwargs):
         super().__init__(**kwargs)
         self.queue = []
@@ -604,8 +619,9 @@ class treat_num(BaseTreatment):
         queue, and then will treat as many people in the queue as there is capacity for.
         """
         self.add_to_queue(sim)
-        treat_inds = BaseTreatment.apply(self, sim) # Apply method from BaseTreatment class
-        self.queue = [e for e in self.queue if e not in treat_inds] # Recreate the queue, removing people who were treated
+        treat_inds = BaseTreatment.apply(self, sim)  # Apply method from BaseTreatment class
+        self.queue = [e for e in self.queue if
+                      e not in treat_inds]  # Recreate the queue, removing people who were treated
         return treat_inds
 
 
@@ -614,14 +630,17 @@ class ART(ss.Intervention):
     ART-treatment intervention by Robyn Stuart, Daniel Klein and Cliff Kerr, edited by Alina Muellenmeister
     """
 
-    def __init__(self, year: np.array, coverage: np.array, **kwargs):
-        # self.requires = HIV
-        self.year = sc.promotetoarray(year)
-        self.coverage = sc.promotetoarray(coverage)
+    def __init__(self, pars=None, par_dists=None, *args, **kwargs):
 
-        super().__init__(**kwargs)
+        pars = ss.omergeleft(pars,
+                             ART_coverages_df=None,
+                             ART_prob=0.9,
+                             duration_on_ART=ss.normal(loc=18, scale=5),
+                             art_efficacy=0.96)
 
-        self.prob_art_at_infection = ss.bernoulli(p=lambda self, sim, uids: np.interp(sim.year, self.year, self.coverage))
+        super().__init__(pars=pars, par_dists=par_dists, *args, **kwargs)
+        self._pending_ART = defaultdict(list)
+        self.disease = 'hiv'
         return
 
     def initialize(self, sim):
@@ -631,24 +650,122 @@ class ART(ss.Intervention):
         return
 
     def apply(self, sim):
-        if sim.year < self.year[0]:
-            return
 
-        ti_delay = 30  # Applying a 30-delay for now, TODO Revisit this
-        recently_infected = ss.true((sim.people.hiv.ti_infected == sim.ti - ti_delay) & sim.people.alive)
+        diagnosed = ss.true(sim.diseases[self.disease].ti_diagnosed == sim.ti)
+        self.schedule_ART_treatment(diagnosed, sim.ti)
 
-        n_added = 0
-        if len(recently_infected) > 0:
-            inds = self.prob_art_at_infection.filter(recently_infected)
-            sim.people.hiv.on_art[inds] = True
-            sim.people.hiv.ti_art[inds] = sim.ti
-            n_added = len(inds)
+        # Check who is starting ART
+        self.check_start_ART_treatment(sim)
+        # Check who is stopping ART
+        self.check_stop_ART_treatment(sim)
+        # Apply correction to match ART coverage data:
+        self.ART_coverage_correction(sim)
 
-        # Add result
-        self.results['n_art'][sim.ti] = np.count_nonzero(sim.people.alive & sim.people.hiv.on_art)
-        return n_added
+        return
 
-#%% Vaccination
+    def schedule_ART_treatment(self, uids, t, start_date=None, period=None):
+        """
+        Schedule ART treatment. Typically not called by the user directly
+
+        Args:
+            inds (int): indices of who to put on ART treatment, specified by check_quar()
+            start_date (int): day to begin ART treatment(defaults to the current day, `sim.t`)
+            period (int): quarantine duration (defaults to ``pars['quar_period']``)
+
+        """
+        start_date = t if start_date is None else int(start_date)
+        uids_ART = uids[np.random.random(len(uids)) < self.pars.ART_prob]
+        period = 1000  # self.pars['quar_period'] if period is None else int(period)
+        for uid in uids_ART:
+            self._pending_ART[start_date].append((uid, start_date + period))
+        return
+
+    def check_uids(self, current, date, t, filter_uids=None):
+        '''
+        Return indices for which the current state is false and which meet the date criterion
+        '''
+        if filter_uids is None:
+            not_current = ss.false(current)
+        else:
+            not_current = filter_uids[np.logical_not(current[filter_uids])]
+        has_date = not_current[~np.isnan(date[not_current])]
+        uids = has_date[t >= date[has_date]]
+        return uids
+
+    def check_start_ART_treatment(self, sim):
+        """
+        Check who is ready to start ART treatment
+        """
+        for uid, end_day in self._pending_ART[sim.ti]:
+            if uid in sim.people.alive.uid:
+                sim.diseases[self.disease].on_art[uid] = True
+                sim.diseases[self.disease].ti_art[uid] = sim.ti
+                # Determine when agents goes off ART:
+                sim.diseases[self.disease].ti_stop_art[uid] = sim.ti + int(self.pars.duration_on_ART.rvs(1))
+        return
+
+    def check_stop_ART_treatment(self, sim):
+        """
+        Check who is stopping ART treatment
+        """
+        stop_uids = self.check_uids(~sim.diseases[self.disease].on_art, sim.diseases[self.disease].ti_stop_art, sim.ti, filter_uids=None)
+        sim.diseases[self.disease].on_art[stop_uids] = False
+        sim.diseases[self.disease].ti_art[stop_uids] = np.nan
+        sim.diseases[self.disease].ti_stop_art[stop_uids] = np.nan
+        sim.diseases[self.disease].ti_since_untreated[stop_uids] = sim.ti
+        return
+
+    def ART_coverage_correction(self, sim):
+        """
+        Adjust number of people on treatment to match data
+        """
+        infected_uids_onART = sim.diseases[self.disease].infected & sim.diseases[self.disease].on_art
+        infected_uids_not_onART = sim.diseases[self.disease].infected & ~sim.diseases[self.disease].on_art
+
+        # Get the current ART coverage. If year is not available, assume 90%
+        if len(self.pars.ART_coverages_df[self.pars.ART_coverages_df['Years'] == sim.year]['Value'].tolist()) > 0:
+            ART_coverage_this_year = self.pars.ART_coverages_df[self.pars.ART_coverages_df['Years'] == sim.year]['Value'].tolist()[0]
+        else:
+            ART_coverage_this_year = int(0.9 * len(ss.true(sim.diseases[self.disease].infected)))
+
+        # Too many agents on treatment -> remove
+        if len(ss.true(infected_uids_onART)) > ART_coverage_this_year:
+            # Agents with the highest CD4 counts will go off ART:
+            n_agents_to_stop_ART = int(len(ss.true(infected_uids_onART)) - ART_coverage_this_year)
+            cd4_counts_onART = sim.diseases[self.disease].cd4[infected_uids_onART]
+            cd4_counts_onART.sort(axis=0)
+            # Grab the last n agents with the highest counts
+            probabilities = (cd4_counts_onART / np.sum(cd4_counts_onART)).values
+            # Probabilities are increasing with CD4 count
+            uids = cd4_counts_onART.uid
+            stop_uids = np.random.choice(uids, n_agents_to_stop_ART, p=probabilities, replace=False)
+            sim.diseases[self.disease].on_art[stop_uids] = False
+            uids_update_ti_untreated = ss.true(sim.diseases[self.disease].ti_art[stop_uids] != sim.ti)
+            sim.diseases[self.disease].ti_art[stop_uids] = np.nan
+            sim.diseases[self.disease].ti_stop_art[stop_uids] = np.nan
+            # Only update when agents actually have been on ART:
+            sim.diseases[self.disease].ti_since_untreated[uids_update_ti_untreated] = sim.ti
+
+        # Not enough agents on treatment -> add
+        elif len(ss.true(infected_uids_onART)) < ART_coverage_this_year:
+            # Agents with the lowest CD4 count will get on ART:
+            n_agents_to_start_ART = int(ART_coverage_this_year - len(ss.true(infected_uids_onART)))
+            cd4_counts_not_onART = sim.diseases[self.disease].cd4[infected_uids_not_onART]
+            cd4_counts_not_onART.sort(axis=0)
+            probabilities = (cd4_counts_not_onART / np.sum(cd4_counts_not_onART)).values
+            # Probabilities are increasing with CD4 count, therefore flip uid array:
+            uids = np.flipud(cd4_counts_not_onART.uid)
+            start_uids = np.random.choice(uids, n_agents_to_start_ART, p=probabilities, replace=False)
+
+            # Put them on ART
+            sim.diseases[self.disease].on_art[start_uids] = True
+            sim.diseases[self.disease].ti_art[start_uids] = sim.ti
+            # Determine when agents go off ART:
+            # sim.diseases[self.disease].ti_stop_art[start_uids] = sim.ti + self.pars.duration_on_ART.rvs(len(start_uids)).astype(int)
+
+        return
+
+# %% Vaccination
 __all__ += ['BaseVaccination', 'routine_vx', 'campaign_vx']
 
 
@@ -663,6 +780,7 @@ class BaseVaccination(Intervention):
          label          (str)           : the name of vaccination strategy
          kwargs         (dict)          : passed to Intervention()
     """
+
     def __init__(self, product=None, prob=None, label=None, **kwargs):
         Intervention.__init__(self, **kwargs)
         self.prob = sc.promotetoarray(prob)
@@ -706,7 +824,6 @@ class routine_vx(BaseVaccination, RoutineDelivery):
 
     def __init__(self, product=None, prob=None, eligibility=None,
                  start_year=None, end_year=None, years=None, **kwargs):
-
         BaseVaccination.__init__(self, product=product, eligibility=eligibility, **kwargs)
         RoutineDelivery.__init__(self, prob=prob, start_year=start_year, end_year=end_year, years=years)
         return
@@ -725,24 +842,26 @@ class campaign_vx(BaseVaccination, CampaignDelivery):
 
     def __init__(self, product=None, prob=None, eligibility=None,
                  years=None, interpolate=True, **kwargs):
-
         BaseVaccination.__init__(self, product=product, eligibility=eligibility, **kwargs)
         CampaignDelivery.__init__(self, prob=prob, years=years, interpolate=interpolate)
         return
 
     def initialize(self, sim):
-        CampaignDelivery.initialize(self, sim) # Initialize this first, as it ensures that prob is interpolated properly
-        BaseVaccination.initialize(self, sim) # Initialize this next
+        CampaignDelivery.initialize(self,
+                                    sim)  # Initialize this first, as it ensures that prob is interpolated properly
+        BaseVaccination.initialize(self, sim)  # Initialize this next
         return
 
 
-#%% Custom Interventions
+# %% Custom Interventions
 __all__ += ['test_ART']
+
 
 class test_ART(ss.Intervention):
     """
 
     """
+
     def __init__(self, disease, uids, infect_uids_t, stop_ART=False, restart_ART=False, *args, **kwargs):
         """
 
@@ -754,7 +873,6 @@ class test_ART(ss.Intervention):
         self.infect_uids_t = infect_uids_t
         self.stop_ART = stop_ART
         self.restart_ART = restart_ART
-
 
         return
 
@@ -785,19 +903,19 @@ class test_ART(ss.Intervention):
         """
         for index, uid in enumerate(self.uids):
             # Check if it's time to infect this agent:
-            if sim.ti == self.infect_uids_t[index] and uid in sim.people.alive.uid:
+            if sim.ti == self.infect_uids_t[index] and uid in sim.people.alive.uid and sim.diseases[self.disease].infected[uid] == False:
                 sim.diseases[self.disease].infected[uid] = True
                 sim.diseases[self.disease].ti_infected[uid] = sim.ti
                 sim.diseases[self.disease].ti_since_untreated[uid] = sim.ti
                 sim.diseases[self.disease].susceptible[uid] = False
                 sim.diseases[self.disease].ti_infectious[uid] = sim.ti + 14
 
-                #if self.stop_ART:
+                # if self.stop_ART:
                 #    sim.diseases[self.disease].ti_stop_art[uid] = sim.ti + sim.diseases[self.disease].pars.avg_duration_stop_ART
 
             if uid in sim.people.alive.uid:
                 # Check if it's time to restart ART treatment:
-                #if sim.diseases[self.disease].on_art[uid] and self.stop_ART and self.restart_ART and sim.ti == sim.diseases[self.disease].ti_stop_art[uid]:
+                # if sim.diseases[self.disease].on_art[uid] and self.stop_ART and self.restart_ART and sim.ti == sim.diseases[self.disease].ti_stop_art[uid]:
                 #    sim.diseases[self.disease].schedule_ART_treatment(np.array([uid]), sim.ti + sim.diseases[self.disease].pars.avg_duration_restart_ART)
 
                 if sim.diseases[self.disease].on_art[uid]:
@@ -815,5 +933,3 @@ class test_ART(ss.Intervention):
                 self.results['status_' + str(uid)][sim.ti] = 'dead'
 
         return
-
-

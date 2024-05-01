@@ -72,7 +72,8 @@ class HIV(ss.Infection):
         self.cd4[sim.people.uid] = self.cd4_start[sim.people.uid]
         self.pars.transmission_timecourse = self.get_transmission_timecouse()
         self.pars.viral_timecourse, self.pars.cd4_timecourse = self.get_viral_dynamics_timecourses()
-        self.art_transmission_reduction = self.pars.art_efficacy / 6  # Assumption: 6 months
+        self.rel_trans[sim.people.uid] = 0
+        # self.art_transmission_reduction = self.pars.art_efficacy / 6  # Assumption: 6 months
 
         return
 
@@ -132,11 +133,6 @@ class HIV(ss.Infection):
     def update_pre(self, sim):
         """
         """
-        self.check_start_ART_treatment(sim)
-        self.check_stop_ART_treatment(sim)
-        # Apply correction of ART coverage:
-        self.ART_coverage_correction(sim)
-
         # Update cd4 start for new agents:
         self.update_cd4_starts(uids=self.cd4_start[pd.isna(self.cd4_start)].uid)  # TODO probably not the best place?
 
@@ -160,9 +156,6 @@ class HIV(ss.Infection):
         # Update today's diagnoses
         diagnosed = ss.true(self.ti_diagnosed == sim.ti)
         self.diagnosed[diagnosed] = True
-
-        # Schedule ART for diagnosed cases:
-        self.schedule_ART_treatment(diagnosed, sim.ti)
 
         return
 
@@ -341,23 +334,6 @@ class HIV(ss.Infection):
 
         return final_uids
 
-    def schedule_ART_treatment(self, uids, t, start_date=None, period=None):
-        """
-        Schedule ART treatment. Typically not called by the user directly
-
-        Args:
-            inds (int): indices of who to put on ART treatment, specified by check_quar()
-            start_date (int): day to begin ART treatment(defaults to the current day, `sim.t`)
-            period (int): quarantine duration (defaults to ``pars['quar_period']``)
-
-        """
-        start_date = t if start_date is None else int(start_date)
-        uids_ART = uids[np.random.random(len(uids)) < self.pars.ART_prob]
-        period = 1000  # self.pars['quar_period'] if period is None else int(period)
-        for uid in uids_ART:
-            self._pending_ARTtreatment[start_date].append((uid, start_date + period))
-        return
-
     def check_uids(self, current, date, t, filter_uids=None):
         '''
         Return indices for which the current state is false and which meet the date criterion
@@ -369,78 +345,3 @@ class HIV(ss.Infection):
         has_date = not_current[~np.isnan(date[not_current])]
         uids = has_date[t >= date[has_date]]
         return uids
-
-    def check_start_ART_treatment(self, sim):
-        """
-        Check who is ready to start ART treatment
-        """
-        for uid, end_day in self._pending_ARTtreatment[sim.ti]:
-            if uid in sim.people.alive.uid:
-                self.on_art[uid] = True
-                self.ti_art[uid] = sim.ti
-                # Determine when agents goes off ART:
-                self.ti_stop_art[uid] = sim.ti + int(self.pars.duration_on_ART.rvs(1))
-        return
-
-    def check_stop_ART_treatment(self, sim):
-        """
-        Check who is stopping ART treatment
-        """
-        stop_uids = self.check_uids(~self.on_art, self.ti_stop_art, sim.ti, filter_uids=None)
-        self.on_art[stop_uids] = False
-        self.ti_art[stop_uids] = np.nan
-        self.ti_stop_art[stop_uids] = np.nan
-        self.ti_since_untreated[stop_uids] = sim.ti
-        return
-
-    def ART_coverage_correction(self, sim):
-        """
-        Adjust number of people on treatment to match data
-        """
-        infected_uids_onART = self.infected & self.on_art
-        infected_uids_not_onART = self.infected & ~self.on_art
-
-        # Get the current ART coverage. If year is not available, assume 90%
-        if len(self.pars.ART_coverages_df[self.pars.ART_coverages_df['Years'] == sim.year]['Value'].tolist()) > 0:
-            ART_coverage_this_year = \
-            self.pars.ART_coverages_df[self.pars.ART_coverages_df['Years'] == sim.year]['Value'].tolist()[0]
-        else:
-            ART_coverage_this_year = int(0.9 * len(ss.true(self.infected)))
-
-        # Too many agents on treatment -> remove
-        if len(ss.true(infected_uids_onART)) > ART_coverage_this_year:
-            # Agents with the highest CD4 counts will go off ART:
-            n_agents_to_stop_ART = int(len(ss.true(infected_uids_onART)) - ART_coverage_this_year)
-            cd4_counts_onART = self.cd4[infected_uids_onART]
-            cd4_counts_onART.sort(axis=0)
-            # Grab the last n agents with the highest counts
-            probabilities = (cd4_counts_onART / np.sum(cd4_counts_onART)).values
-            # Probabilities are increasing with CD4 count
-            uids = cd4_counts_onART.uid
-            stop_uids = np.random.choice(uids, n_agents_to_stop_ART, p=probabilities,
-                                         replace=False)  # TODO eventually put this into a distribution module?
-
-            self.on_art[stop_uids] = False
-            self.ti_art[stop_uids] = np.nan
-            self.ti_stop_art[stop_uids] = np.nan
-            self.ti_since_untreated[stop_uids] = sim.ti
-
-        # Not enough agents on treatment -> add
-        elif len(ss.true(infected_uids_onART)) < ART_coverage_this_year:
-            # Agents with the lowest CD4 count will get on ART:
-            n_agents_to_start_ART = int(ART_coverage_this_year - len(ss.true(infected_uids_onART)))
-            cd4_counts_not_onART = self.cd4[infected_uids_not_onART]
-            cd4_counts_not_onART.sort(axis=0)
-            probabilities = (cd4_counts_not_onART / np.sum(cd4_counts_not_onART)).values
-            # Probabilities are increasing with CD4 count, therefore flip uid array:
-            uids = np.flipud(cd4_counts_not_onART.uid)
-            start_uids = np.random.choice(uids, n_agents_to_start_ART, p=probabilities,
-                                          replace=False)  # TODO eventually put this into a distribution module?
-
-            # Put them on ART
-            self.on_art[start_uids] = True
-            self.ti_art[start_uids] = sim.ti
-            # Determine when agents go off ART:
-            self.ti_stop_art[start_uids] = sim.ti + self.pars.duration_on_ART.rvs(len(start_uids)).astype(int)
-
-        return

@@ -161,7 +161,7 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
     hiv.pars['init_prev'] = ss.bernoulli(p=0.3)
     hiv.pars['cd4_start_mean'] = 800
     hiv.pars['primary_acute_inf_dur'] = 2.9  # in months
-    hiv.pars['transmission_sd'] = 0.025 # Standard Deviation of normal distribution for transmission.
+    hiv.pars['transmission_sd'] = 0.00 # Standard Deviation of normal distribution for transmission.
 
     # Read in treatment data:
     ART_coverages_raw = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Testing & treatment',
@@ -199,9 +199,13 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
                                    symp_prob=0.1,
                                    sensitivity=0.9,
                                    test_delay_mean=1),
+                       ART(ART_coverages_df=ART_coverages_df,
+                           ART_prob=0.9,
+                           duration_on_ART=ss.normal(loc=18, scale=5),# https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
+                           art_efficacy=0.96),
                        test_ART(disease='hiv',
                                 uids=save_agents,
-                                infect_uids_t=np.repeat(0, len(save_agents)),
+                                infect_uids_t=np.repeat(100, len(save_agents)),
                                 stop_ART=True,
                                 restart_ART=True)],
         demographics=[pregnancy, death],
