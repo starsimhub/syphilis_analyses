@@ -41,12 +41,8 @@ class HIV(ss.Infection):
                              init_prev=0.05,
                              transmission_sd=0.025,
                              primary_acute_inf_dur=1,  # in months
-                             eff_condoms=0.7,
-                             ART_coverages_df=None,
-                             ART_prob=0.9,
-                             duration_on_ART=ss.normal(loc=18, scale=5),
-                             # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
                              art_efficacy=0.96,
+                             death_data=None,
                              death_prob=0.05)
 
         par_dists = ss.omergeleft(par_dists,
@@ -67,10 +63,9 @@ class HIV(ss.Infection):
         Initialize
         """
         super().initialize(sim)
-        self.cd4_start[sim.people.uid] = ss.normal(loc=self.pars.cd4_start_mean, scale=100).initialize().rvs(
-            len(sim.people))
+        self.cd4_start[sim.people.uid] = ss.normal(loc=self.pars.cd4_start_mean, scale=100).initialize().rvs(len(sim.people))
         self.cd4[sim.people.uid] = self.cd4_start[sim.people.uid]
-        self.pars.transmission_timecourse = self.get_transmission_timecouse()
+        self.pars.transmission_timecourse = self.get_transmission_timecourse()
         self.pars.viral_timecourse, self.pars.cd4_timecourse = self.get_viral_dynamics_timecourses()
         self.rel_trans[sim.people.uid] = 0
         # self.art_transmission_reduction = self.pars.art_efficacy / 6  # Assumption: 6 months
@@ -82,13 +77,20 @@ class HIV(ss.Infection):
         return self.infectious
 
     @staticmethod
-    def make_death_prob(module, sim, uids):
-        p = module.pars
-        out = sim.dt * module.death_prob_data / (p.cd4_min - p.cd4_max) ** 2 * (module.cd4[uids] - p.cd4_max) ** 2
-        out = np.array(out)
-        return out
+    def make_death_prob(self, sim, uids):
+        # p = module.pars
+        # out = sim.dt * module.death_prob_data / (p.cd4_min - p.cd4_max) ** 2 * (module.cd4[uids] - p.cd4_max) ** 2
+        # out = np.array(out)
+        # TODO probably find a better place for this
+        death_data = [(range(500, int(np.ceil(np.max(self.cd4_start)))), 0.0036 / 12),
+                      (range(350, 500), 0.0036 / 12),
+                      (range(200, 350), 0.0088 / 12),
+                      (range(50, 200), 0.059 / 12),
+                      (range(0, 50), 0.323 / 12)]
+        death_probs = [probs[1] for probs in death_data for cd4_count in self.cd4[uids].values if int(cd4_count) in probs[0]]
+        return death_probs
 
-    def get_transmission_timecouse(self):
+    def get_transmission_timecourse(self):
         """
         Define transmission time course
         """
@@ -192,7 +194,6 @@ class HIV(ss.Infection):
         infected_uids_onART = sim.people.alive & self.infected & self.on_art
         infected_uids_not_onART = sim.people.alive & self.infected & ~self.on_art
 
-        # Update viral load and cd4 count:
         duration_since_infection = sim.ti - self.ti_infected[infected_uids_not_onART]
         duration_since_infection = np.minimum(duration_since_infection, len(self.pars.cd4_timecourse) - 1).astype(int)
         duration_since_infection_transmission = np.minimum(duration_since_infection,
