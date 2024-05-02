@@ -11,7 +11,7 @@ import sciris as sc
 import seaborn as sns
 from stisim.networks import StructuredSexual
 from stisim.diseases.hiv import HIV
-from stisim.interventions import ART, HIV_testing, test_ART
+from stisim.interventions import ART, HIV_testing, test_ART, BaseTest, routine_screening
 from matplotlib.ticker import FuncFormatter
 
 quick_run = False
@@ -149,6 +149,15 @@ def plot_hiv(sim_output):
     # plt.show()
     sc.savefig("figures/hiv_plots.png", dpi=100)
 
+def make_products(sim):
+
+    #################################################################
+    # Test 1
+    #################################################################
+    my_diagnostics_data = pd.DataFrame(
+        {'name': 'test_1', 'health_states': ['precin', 'cin1', 'cin2', 'cin3', 'cancerous'], 'diasease': 'hiv'})
+    my_treatment = ss.dx(df=my_diagnostics_data)
+
 
 def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, latent_trans=0.075,
                  save_agents=np.array([0])):
@@ -162,6 +171,11 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
     hiv.pars['cd4_start_mean'] = 800
     hiv.pars['primary_acute_inf_dur'] = 2.9  # in months
     hiv.pars['transmission_sd'] = 0.00 # Standard Deviation of normal distribution for transmission.
+    hiv.pars['death_data'] = [(500, 0.0036 / 12),
+                              (range(350, 500), 0.0036 / 12),
+                              (range(200, 350), 0.0088 / 12),
+                              (range(50, 200), 0.059 / 12),
+                              (range(0, 50), 0.323 / 12)]
 
     # Read in treatment data:
     ART_coverages_raw = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Testing & treatment',
@@ -186,6 +200,36 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
     sexual = StructuredSexual()
     maternal = ss.MaternalNet()
 
+    # Load HIV test data:
+    HIV_tests_data_raw = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Testing & treatment',
+                                      skiprows=1).iloc[0:15, 1:43]
+    HIV_tests_data_raw.index = HIV_tests_data_raw.iloc[:, 0]
+    HIV_tests_data_raw = HIV_tests_data_raw.iloc[:, 1:]
+    HIV_tests_data_raw.loc["Other_avg"] = HIV_tests_data_raw[HIV_tests_data_raw.index != "FSW"].mean()
+    tivec = np.arange(start=1990, stop=2020 + 1 , step=1)
+    FSW_prop = np.interp(tivec,
+                          HIV_tests_data_raw.loc["FSW"].index[~pd.isna(HIV_tests_data_raw.loc["FSW"].values)].astype(int),
+                          HIV_tests_data_raw.loc["FSW"].values[~pd.isna(HIV_tests_data_raw.loc["FSW"].values)])
+    other_prop = np.interp(tivec,
+                          HIV_tests_data_raw.loc["Other_avg"].index[~pd.isna(HIV_tests_data_raw.loc["Other_avg"].values)].astype(int),
+                          HIV_tests_data_raw.loc["Other_avg"].values[~pd.isna(HIV_tests_data_raw.loc["Other_avg"].values)])
+
+    # Testing intervention
+    my_diagnostics_data = pd.DataFrame(
+        {'name': 'test_1',
+         'state': ['susceptible', 'susceptible'],
+         'disease': 'hiv',
+         'probability': [0.5, 0.5],
+         'result': ['positive', 'negative']})
+    my_test = ss.Dx(df=my_diagnostics_data)
+    screen_eligible = lambda sim: sim.people.alive
+    HIV_testing = ss.BaseTest(
+        prob=0.2,
+        product=my_test,
+        eligibility=screen_eligible,
+        label='Test1'
+    )
+
     sim_kwargs = dict(
         dt=dt,
         total_pop=total_pop,
@@ -195,10 +239,7 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
         remove_dead=1,  # How many timesteps to go between removing dead agents (0 to not remove)
         diseases=hiv,
         networks=ss.ndict(sexual, maternal),
-        interventions=[HIV_testing(disease='hiv',
-                                   symp_prob=0.1,
-                                   sensitivity=0.9,
-                                   test_delay_mean=1),
+        interventions=[HIV_testing,
                        ART(ART_coverages_df=ART_coverages_df,
                            ART_prob=0.9,
                            duration_on_ART=ss.normal(loc=18, scale=5),# https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x

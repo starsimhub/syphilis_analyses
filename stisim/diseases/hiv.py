@@ -304,37 +304,6 @@ class HIV(ss.Infection):
     def set_congenital(self, sim, target_uids, source_uids):
         return self.set_prognoses(sim, target_uids, source_uids)
 
-    def test(self, uids, t, test_sensitivity=1.0, loss_prob=0.0, test_delay=0):
-        '''
-        Method to test people. Typically not to be called by the user directly;
-        see the test_num() and test_prob() interventions.
-
-        Args:
-            inds: indices of who to test
-            test_sensitivity (float): probability of a true positive
-            loss_prob (float): probability of loss to follow-up
-            test_delay (int): number of days before test results are ready
-        '''
-
-        uids = np.unique(uids)
-        self.tested[uids] = True
-        self.ti_tested[uids] = t  # Only keep the last time they tested
-
-        is_infectious = uids[self.infectious[uids]]
-        pos_test = np.random.random(len(is_infectious)) < test_sensitivity
-        is_inf_pos = is_infectious[pos_test]
-
-        not_diagnosed = is_inf_pos[np.isnan(self.ti_diagnosed[is_inf_pos])]
-        not_lost = np.random.random(len(not_diagnosed)) < 1.0 - loss_prob
-        final_uids = not_diagnosed[not_lost]
-
-        # Store the date the person will be diagnosed, as well as the date they took the test which will come back
-        # positive
-        self.ti_diagnosed[final_uids] = t + test_delay
-        self.ti_pos_test[final_uids] = t
-
-        return final_uids
-
     def check_uids(self, current, date, t, filter_uids=None):
         '''
         Return indices for which the current state is false and which meet the date criterion

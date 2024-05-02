@@ -7,6 +7,96 @@ import sciris as sc
 import numpy as np
 import pandas as pd
 from collections import defaultdict
+import pylab as pl
+import inspect
+
+
+def find_timepoint(arr, t=None, interv=None, sim=None, which='first'):
+    '''
+    Helper function to find if the current simulation time matches any timepoint in the
+    intervention. Although usually never more than one index is returned, it is
+    returned as a list for the sake of easy iteration.
+
+    Args:
+        arr (list/function): list of timepoints in the intervention, or a boolean array; or a function that returns these
+        t (int): current simulation time (can be None if a boolean array is used)
+        interv (intervention): the intervention object (usually self); only used if arr is callable
+        sim (sim): the simulation object; only used if arr is callable
+        which (str): what to return: 'first', 'last', or 'all' indices
+
+    Returns:
+        inds (list): list of matching timepoints; length zero or one unless which is 'all'
+    '''
+    if callable(arr):
+        arr = arr(interv, sim)
+        arr = sc.promotetoarray(arr)
+    all_inds = sc.findinds(arr=arr, val=t)
+    if len(all_inds) == 0 or which == 'all':
+        inds = all_inds
+    elif which == 'first':
+        inds = [all_inds[0]]
+    elif which == 'last':
+        inds = [all_inds[-1]]
+    else:  # pragma: no cover
+        errormsg = f'Argument "which" must be "first", "last", or "all", not "{which}"'
+        raise ValueError(errormsg)
+    return inds
+
+
+def select_people(inds, prob=None):
+    '''
+    Return an array of indices of people to who accept a service being offered
+
+    Args:
+        inds: array of indices of people offered a service (e.g. screening, triage, treatment)
+        prob: acceptance probability
+
+    Returns: Array of indices of people who accept
+    '''
+    accept_probs = np.full_like(inds, fill_value=prob, dtype=np.float64)
+    accept_inds = ss.true(ss.binomial_arr(accept_probs))
+    return inds[accept_inds]
+
+
+def get_subtargets(subtarget, sim):
+    '''
+    A small helper function to see if subtargeting is a list of indices to use,
+    or a function that needs to be called. If a function, it must take a single
+    argument, a sim object, and return a list of indices. Also validates the values.
+    Currently designed for use with testing interventions, but could be generalized
+    to other interventions. Not typically called directly by the user.
+
+    Args:
+        subtarget (dict): dict with keys 'inds' and 'vals'; see test_num() for examples of a valid subtarget dictionary
+        sim (Sim): the simulation object
+    '''
+
+    # Validation
+    if callable(subtarget):
+        subtarget = subtarget(sim)
+
+    if 'inds' not in subtarget:  # pragma: no cover
+        errormsg = f'The subtarget dict must have keys "inds" and "vals", but you supplied {subtarget}'
+        raise ValueError(errormsg)
+
+    # Handle the two options of type
+    if callable(subtarget['inds']):  # A function has been provided
+        subtarget_inds = subtarget['inds'](sim)  # Call the function to get the indices
+    else:
+        subtarget_inds = subtarget['inds']  # The indices are supplied directly
+
+    # Validate the values
+    if callable(subtarget['vals']):  # A function has been provided
+        subtarget_vals = subtarget['vals'](sim)  # Call the function to get the indices
+    else:
+        subtarget_vals = subtarget['vals']  # The indices are supplied directly
+    if sc.isiterable(subtarget_vals):
+        if len(subtarget_vals) != len(subtarget_inds):  # pragma: no cover
+            errormsg = f'Length of subtargeting indices ({len(subtarget_inds)}) does not match length of values ({len(subtarget_vals)})'
+            raise ValueError(errormsg)
+
+    return subtarget_inds, subtarget_vals
+
 
 __all__ = ['Analyzer', 'Intervention']
 
@@ -36,75 +126,205 @@ class Analyzer(ss.Module):
         return super().finalize(sim)
 
 
-class Intervention(ss.Module):
-    """
+class Intervention:
+    '''
     Base class for interventions.
-    
-    The key method of the intervention is ``apply()``, which is called with the sim
-    on each timestep.
-    """
 
-    def __init__(self, eligibility=None, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.eligibility = eligibility
+    Args:
+        label       (str): a label for the intervention (used for plotting, and for ease of identification)
+        show_label (bool): whether or not to include the label in the legend
+        do_plot    (bool): whether or not to plot the intervention
+        line_args  (dict): arguments passed to pl.axvline() when plotting
+    '''
+
+    def __init__(self, label=None, show_label=False, do_plot=None, line_args=None, **kwargs):
+        # super().__init__(**kwargs)
+        self._store_args()  # Store the input arguments so the intervention can be recreated
+        if label is None: label = self.__class__.__name__  # Use the class name if no label is supplied
+        self.label = label  # e.g. "Screen"
+        self.show_label = show_label  # Do not show the label by default
+        self.do_plot = do_plot if do_plot is not None else False  # Plot the intervention, including if None
+        self.line_args = sc.mergedicts(dict(linestyle='--', c='#aaa', lw=1.0),
+                                       line_args)  # Do not set alpha by default due to the issue of overlapping interventions
+        self.timepoints = []  # The start and end timepoints of the intervention
+        self.initialized = False  # Whether or not it has been initialized
+        self.finalized = False  # Whether or not it has been initialized
         return
+
+    def __repr__(self, jsonify=False):
+        ''' Return a JSON-friendly output if possible, else revert to short repr '''
+
+        if self.__class__.__name__ in __all__ or jsonify:
+            try:
+                json = self.to_json()
+                which = json['which']
+                pars = json['pars']
+                parstr = ', '.join([f'{k}={v}' for k, v in pars.items()])
+                output = f"stisim.{which}({parstr})"
+            except Exception as E:
+                output = f'{type(self)} (error: {str(E)})'  # If that fails, print why
+            return output
+        else:
+            return f'{self.__module__}.{self.__class__.__name__}()'
 
     def __call__(self, *args, **kwargs):
+        # Makes Intervention(sim) equivalent to Intervention.apply(sim)
+        if not self.initialized:  # pragma: no cover
+            errormsg = f'Intervention (label={self.label}, {type(self)}) has not been initialized'
+            raise RuntimeError(errormsg)
         return self.apply(*args, **kwargs)
 
-    def initialize(self, sim):
-        return super().initialize(sim)
+    def disp(self):
+        ''' Print a detailed representation of the intervention '''
+        return sc.pr(self)
 
-    def apply(self, sim, *args, **kwargs):
-        raise NotImplementedError
-
-    def finalize(self, sim):
-        return super().finalize(sim)
-
-    def _parse_product(self, product):
-        """
-        Parse the product input
-        """
-        if isinstance(product, ss.Product):  # No need to do anything
-            self.product = product
-        elif isinstance(product, str):
-            self.product = self._parse_product_str(product)
+    def _store_args(self):
+        ''' Store the user-supplied arguments for later use in to_json '''
+        f0 = inspect.currentframe()  # This "frame", i.e. Intervention.__init__()
+        f1 = inspect.getouterframes(f0)  # The list of outer frames
+        if self.__class__.__init__ is Intervention.__init__:
+            parent = f1[1].frame  # parent = f1[2].frame # The parent frame, e.g. change_beta.__init__()
         else:
-            errormsg = f'Cannot understand {product} - please provide it as a Product.'
-            raise ValueError(errormsg)
+            parent = f1[2].frame  # parent = f1[2].frame # The parent frame, e.g. change_beta.__init__()
+        _, _, _, values = inspect.getargvalues(parent)  # Get the values of the arguments
+        if values:
+            self.input_args = {}
+            for key, value in values.items():
+                if key == 'kwargs':  # Store additional kwargs directly
+                    for k2, v2 in value.items():  # pragma: no cover
+                        self.input_args[k2] = v2  # These are already a dict
+                elif key not in ['self', '__class__']:  # Everything else, but skip these
+                    self.input_args[key] = value
         return
 
-    def _parse_product_str(self, product):
+    def initialize(self, sim=None):
+        '''
+        Initialize intervention -- this is used to make modifications to the intervention
+        that can't be done until after the sim is created.
+        '''
+        self.initialized = True
+        self.finalized = False
+        return
+
+    def finalize(self, sim=None):
+        '''
+        Finalize intervention
+
+        This method is run once as part of ``sim.finalize()`` enabling the intervention to perform any
+        final operations after the simulation is complete (e.g. rescaling)
+        '''
+        if self.finalized:  # pragma: no cover
+            raise RuntimeError(
+                'Intervention already finalized')  # Raise an error because finalizing multiple times has a high probability of producing incorrect results e.g. applying rescale factors twice
+        self.finalized = True
+        return
+
+    def apply(self, sim):
+        '''
+        Apply the intervention. This is the core method which each derived intervention
+        class must implement. This method gets called at each timestep and can make
+        arbitrary changes to the Sim object, as well as storing or modifying the
+        state of the intervention.
+
+        Args:
+            sim: the Sim instance
+
+        Returns:
+            None
+        '''
         raise NotImplementedError
 
-    def check_eligibility(self, sim):
-        """
-        Return an array of indices of agents eligible for screening at time t
-        """
-        if self.eligibility is not None:
-            is_eligible = self.eligibility(sim)
+    def shrink(self, in_place=False):
+        '''
+        Remove any excess stored data from the intervention; for use with sim.shrink().
+
+        Args:
+            in_place (bool): whether to shrink the intervention (else shrink a copy)
+        '''
+        if in_place:  # pragma: no cover
+            return self
         else:
-            is_eligible = sim.people.alive  # Probably not required
-        return is_eligible
+            return sc.dcp(self)
+
+    def plot_intervention(self, sim, ax=None, **kwargs):
+        '''
+        Plot the intervention
+
+        This can be used to do things like add vertical lines at timepoints when
+        interventions take place. Can be disabled by setting self.do_plot=False.
+
+        Note 1: you can modify the plotting style via the ``line_args`` argument when
+        creating the intervention.
+
+        Note 2: By default, the intervention is plotted at the timepoints stored in self.timepoints.
+        However, if there is a self.plot_timepoints attribute, this will be used instead.
+
+        Args:
+            sim: the Sim instance
+            ax: the axis instance
+            kwargs: passed to ax.axvline()
+
+        Returns:
+            None
+        '''
+        line_args = sc.mergedicts(self.line_args, kwargs)
+        if self.do_plot or self.do_plot is None:
+            if ax is None:
+                ax = pl.gca()
+            if hasattr(self, 'plot_timepoints'):
+                timepoints = self.plot_timepoints
+            else:
+                timepoints = self.timepoints
+            if sc.isiterable(timepoints):
+                label_shown = False  # Don't show the label more than once
+                for timepoint in timepoints:
+                    if sc.isnumber(timepoint):
+                        if self.show_label and not label_shown:  # Choose whether to include the label in the legend
+                            label = self.label
+                            label_shown = True
+                        else:
+                            label = None
+                        date = sim.yearvec[timepoint]
+                        ax.axvline(date, label=label, **line_args)
+        return
+
+    def to_json(self):
+        '''
+        Return JSON-compatible representation
+
+        Custom classes can't be directly represented in JSON. This method is a
+        one-way export to produce a JSON-compatible representation of the
+        intervention. In the first instance, the object dict will be returned.
+        However, if an intervention itself contains non-standard variables as
+        attributes, then its ``to_json`` method will need to handle those.
+
+        Note that simply printing an intervention will usually return a representation
+        that can be used to recreate it.
+
+        Returns:
+            JSON-serializable representation (typically a dict, but could be anything else)
+        '''
+        which = self.__class__.__name__
+        pars = sc.jsonify(self.input_args)
+        output = dict(which=which, pars=pars)
+        return output
 
 
 # %% Template classes for routine and campaign delivery
-__all__ += ['RoutineDelivery', 'CampaignDelivery']
+__all__ += ['RoutineDelivery']
 
 
 class RoutineDelivery(Intervention):
-    """
+    '''
     Base class for any intervention that uses routine delivery; handles interpolation of input years.
-    """
+    '''
 
-    def __init__(self, years=None, start_year=None, end_year=None, prob=None, annual_prob=True, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, years=None, start_year=None, end_year=None, prob=None, annual_prob=True):
         self.years = years
         self.start_year = start_year
         self.end_year = end_year
         self.prob = sc.promotetoarray(prob)
         self.annual_prob = annual_prob  # Determines whether the probability is annual or per timestep
-        self.coverage_dist = ss.bernoulli(p=0)  # Placeholder - initialize delivery
         return
 
     def initialize(self, sim):
@@ -116,26 +336,26 @@ class RoutineDelivery(Intervention):
 
         # If start_year and end_year are not provided, figure them out from the provided years or the sim
         if self.years is None:
-            if self.start_year is None: self.start_year = sim.pars['start']
-            if self.end_year is None:   self.end_year = sim.pars['end']
+            if self.start_year is None: self.start_year = sim['start']
+            if self.end_year is None:   self.end_year = sim['end']
         else:
             self.start_year = self.years[0]
             self.end_year = self.years[-1]
 
         # More validation
-        if not (any(np.isclose(self.start_year, sim.yearvec)) and any(np.isclose(self.end_year, sim.yearvec))):
+        if (self.start_year not in sim.yearvec) or (self.end_year not in sim.yearvec):
             errormsg = 'Years must be within simulation start and end dates.'
             raise ValueError(errormsg)
 
         # Adjustment to get the right end point
-        adj_factor = int(1 / sim.dt) - 1 if sim.dt < 1 else 1
+        adj_factor = int(1 / sim['dt']) - 1 if sim['dt'] < 1 else 1
 
         # Determine the timepoints at which the intervention will be applied
-        self.start_point = sc.findfirst(sim.yearvec, self.start_year)
-        self.end_point = sc.findfirst(sim.yearvec, self.end_year) + adj_factor
+        self.start_point = sc.findinds(sim.yearvec, self.start_year)[0]
+        self.end_point = sc.findinds(sim.yearvec, self.end_year)[0] + adj_factor
         self.years = sc.inclusiverange(self.start_year, self.end_year)
         self.timepoints = sc.inclusiverange(self.start_point, self.end_point)
-        self.yearvec = np.arange(self.start_year, self.end_year + adj_factor, sim.dt)
+        self.yearvec = np.arange(self.start_year, self.end_year + adj_factor, sim['dt'])
 
         # Get the probability input into a format compatible with timepoints
         if len(self.years) != len(self.prob):
@@ -148,222 +368,146 @@ class RoutineDelivery(Intervention):
             self.prob = sc.smoothinterp(self.yearvec, self.years, self.prob, smoothness=0)
 
         # Lastly, adjust the probability by the sim's timestep, if it's an annual probability
-        if self.annual_prob: self.prob = 1 - (1 - self.prob) ** sim.dt
-
-        return
-
-
-class CampaignDelivery(Intervention):
-    """
-    Base class for any intervention that uses campaign delivery; handles interpolation of input years.
-    """
-
-    def __init__(self, years, interpolate=None, prob=None, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.years = sc.promotetoarray(years)
-        self.interpolate = True if interpolate is None else interpolate
-        self.prob = sc.promotetoarray(prob)
-        return
-
-    def initialize(self, sim):
-        # Decide whether to apply the intervention at every timepoint throughout the year, or just once.
-        self.timepoints = sc.findnearest(sim.yearvec, self.years)
-
-        if len(self.prob) == 1:
-            self.prob = np.array([self.prob[0]] * len(self.timepoints))
-
-        if len(self.prob) != len(self.years):
-            errormsg = f'Length of years incompatible with length of probabilities: {len(self.years)} vs {len(self.prob)}'
-            raise ValueError(errormsg)
+        if self.annual_prob: self.prob = 1 - (1 - self.prob) ** sim['dt']
 
         return
 
 
 # %% Screening and triage
-__all__ += ['BaseTest', 'BaseScreening', 'routine_screening', 'campaign_screening', 'BaseTriage', 'routine_triage',
-            'campaign_triage', 'HIV_testing']
-
+__all__ += ['BaseTest', 'BaseScreening', 'routine_screening']
 
 class BaseTest(Intervention):
-    """
+    '''
     Base class for screening and triage.
 
     Args:
-         product        (Product)       : the diagnostic to use
+         product        (str/Product)   : the diagnostic to use
          prob           (float/arr)     : annual probability of eligible people receiving the diagnostic
          eligibility    (inds/callable) : indices OR callable that returns inds
+         label          (str)           : the name of screening strategy
          kwargs         (dict)          : passed to Intervention()
-    """
+    '''
 
     def __init__(self, product=None, prob=None, eligibility=None, **kwargs):
-        super().__init__(**kwargs)
+        Intervention.__init__(self, **kwargs)
         self.prob = sc.promotetoarray(prob)
         self.eligibility = eligibility
         self._parse_product(product)
-        self.screened = ss.State('screened', bool, False)
-        self.screens = ss.State('screens', int, 0)
-        self.ti_screened = ss.State('ti_screened', int, ss.INT_NAN)
+
+    def _parse_product(self, product):
+        '''
+        Parse the product input
+        '''
+        if isinstance(product, ss.Product):  # No need to do anything
+            self.product = product
+        elif isinstance(product, str):  # Try to find it in the list of defaults
+            try:
+                self.product = ss.default_dx(prod_name=product)
+            except:
+                errormsg = f'Could not find product {product} in the standard list.'
+                raise ValueError(errormsg)
+        else:
+            errormsg = f'Cannot understand format of product {product} - please provide it as either a Product or string matching a default product.'
+            raise ValueError(errormsg)
         return
 
     def initialize(self, sim):
-        Intervention.initialize(self, sim)
-        self.outcomes = {k: np.array([], dtype=int) for k in self.product.hierarchy}
+        Intervention.initialize(self)
+        self.npts = sim.res_npts
+        self.n_products_used = ss.Result(name=f'Products administered by {self.label}', npts=sim.res_npts, scale=True)
+        self.outcomes = {k: np.array([], dtype=np.int64) for k in self.product.hierarchy}
         return
 
     def deliver(self, sim):
-        """
+        '''
         Deliver the diagnostics by finding who's eligible, finding who accepts, and applying the product.
-        """
-        ti = sc.findinds(self.timepoints, sim.ti)[0]
+        '''
+        ti = sc.findinds(self.timepoints, sim.t)[0]
         prob = self.prob[ti]  # Get the proportion of people who will be tested this timestep
-        is_eligible = self.check_eligibility(sim)  # Check eligibility
-        self.coverage_dist.set(p=prob)
-        accept_uids = self.coverage_dist.filter(ss.true(is_eligible))
-        if len(accept_uids):
-            self.outcomes = self.product.administer(sim, accept_uids)  # Actually administer the diagnostic
-        return accept_uids
+        eligible_inds = self.check_eligibility(sim)  # Check eligibility
+        accept_inds = select_people(eligible_inds, prob=prob)  # Find people who accept
+        if len(accept_inds):
+            idx = int(sim.t / sim.resfreq)
+            self.n_products_used[idx] += sim.people.scale_flows(accept_inds)
+            self.outcomes = self.product.administer(sim,
+                                                    accept_inds)  # Actually administer the diagnostic, filtering people into outcome categories
+        return accept_inds
 
     def check_eligibility(self, sim):
         raise NotImplementedError
 
 
 class BaseScreening(BaseTest):
-    """
+    '''
     Base class for screening.
+
     Args:
-        kwargs (dict): passed to BaseTest
-    """
+        age_range (list/tuple/arr)  : age range for screening, e.g. [30,50]
+        kwargs    (dict)            : passed to BaseTest
+    '''
+
+    def __init__(self, age_range=None, **kwargs):
+        BaseTest.__init__(self, **kwargs)  # Initialize the BaseTest object
+        self.age_range = age_range or [30, 50]  # This is later filtered to exclude people not yet sexually active
 
     def check_eligibility(self, sim):
-        """
-        Check eligibility
-        """
-        raise NotImplementedError
-
-    def apply(self, sim, module=None):
-        """
-        Perform screening by finding who's eligible, finding who accepts, and applying the product.
-        """
-        accept_uids = np.array([])
-        if sim.ti in self.timepoints:
-            accept_uids = self.deliver(sim)
-            self.screened[accept_uids] = True
-            self.screens[accept_uids] += 1
-            self.ti_screened[accept_uids] = sim.ti
-            self.results['n_screened'][sim.ti] = len(accept_uids)
-            self.results['n_dx'][sim.ti] = len(self.outcomes['positive'])
-
-        return accept_uids
-
-
-class BaseTriage(BaseTest):
-    """
-    Base class for triage.
-    Args:
-        kwargs (dict): passed to BaseTest
-    """
-
-    def check_eligibility(self, sim):
-        return sc.promotetoarray(self.eligibility(sim))
+        '''
+        Return an array of indices of agents eligible for screening at time t, i.e. sexually active
+        females in age range, plus any additional user-defined eligibility, which often includes
+        the screening interval.
+        '''
+        adult_females = sim.people.is_female_adult
+        in_age_range = (sim.people.age >= self.age_range[0]) * (sim.people.age <= self.age_range[1])
+        conditions = (adult_females * in_age_range).astype(bool)
+        if self.eligibility is not None:
+            other_eligible = sc.promotetoarray(self.eligibility(sim))
+            conditions = conditions * other_eligible
+        return ss.true(conditions)
 
     def apply(self, sim):
-        self.outcomes = {k: np.array([], dtype=int) for k in self.product.hierarchy}
+        '''
+        Perform screening by finding who's eligible, finding who accepts, and applying the product.
+        '''
+        self.outcomes = {k: np.array([], dtype=np.int64) for k in self.product.hierarchy}
         accept_inds = np.array([])
-        if sim.t in self.timepoints: accept_inds = self.deliver(sim)
+        if sim.ti in self.timepoints:
+            accept_inds = self.deliver(sim)
+            sim.people.screened[accept_inds] = True
+            sim.people.screens[accept_inds] += 1
+            sim.people.date_screened[accept_inds] = sim.t
+
+            # Store results
+            idx = int(sim.t / sim.resfreq)
+            new_screen_inds = ss.ifalsei(sim.people.screened,
+                                         accept_inds)  # Figure out people who are getting screened for the first time
+            n_new_people = sim.people.scale_flows(new_screen_inds)  # Scale
+            n_new_screens = sim.people.scale_flows(accept_inds)  # Scale
+            sim.results['new_screened'][idx] += n_new_people
+            sim.results['new_screens'][idx] += n_new_screens
+
         return accept_inds
 
 
 class routine_screening(BaseScreening, RoutineDelivery):
-    """
+    '''
     Routine screening - an instance of base screening combined with routine delivery.
     See base classes for a description of input arguments.
 
     **Examples**::
-        screen1 = ss.routine_screening(product=my_prod, prob=0.02) # Screen 2% of the eligible population every year
-        screen2 = ss.routine_screening(product=my_prod, prob=0.02, start_year=2020) # Screen 2% every year starting in 2020
-        screen3 = ss.routine_screening(product=my_prod, prob=np.linspace(0.005,0.025,5), years=np.arange(2020,2025)) # Scale up screening over 5 years starting in 2020
-    """
 
-    def __init__(self, product=None, prob=None, eligibility=None,
+        screen1 = hpv.routine_screening(product='hpv', prob=0.02) # Screen 2% of the eligible population every year
+        screen2 = hpv.routine_screening(product='hpv', prob=0.02, start_year=2020) # Screen 2% every year starting in 2020
+        screen3 = hpv.routine_screening(product='hpv', prob=np.linspace(0.005,0.025,5), years=np.arange(2020,2025)) # Scale up screening over 5 years starting in 2020
+    '''
+
+    def __init__(self, product=None, prob=None, eligibility=None, age_range=None,
                  years=None, start_year=None, end_year=None, **kwargs):
-        BaseScreening.__init__(self, product=product, eligibility=eligibility, **kwargs)
+        BaseScreening.__init__(self, product=product, age_range=age_range, eligibility=eligibility, **kwargs)
         RoutineDelivery.__init__(self, prob=prob, start_year=start_year, end_year=end_year, years=years)
-        return
 
     def initialize(self, sim):
         RoutineDelivery.initialize(self, sim)  # Initialize this first, as it ensures that prob is interpolated properly
         BaseScreening.initialize(self, sim)  # Initialize this next
-        return
-
-
-class campaign_screening(BaseScreening, CampaignDelivery):
-    """
-    Campaign screening - an instance of base screening combined with campaign delivery.
-    See base classes for a description of input arguments.
-
-    **Examples**::
-
-        screen1 = ss.campaign_screening(product=my_prod, prob=0.2, years=2030) # Screen 20% of the eligible population in 2020
-        screen2 = ss.campaign_screening(product=my_prod, prob=0.02, years=[2025,2030]) # Screen 20% of the eligible population in 2025 and again in 2030
-    """
-
-    def __init__(self, product=None, sex=None, eligibility=None,
-                 prob=None, years=None, interpolate=None, **kwargs):
-        BaseScreening.__init__(self, product=product, sex=sex, eligibility=eligibility, **kwargs)
-        CampaignDelivery.__init__(self, prob=prob, years=years, interpolate=interpolate)
-        return
-
-    def initialize(self, sim):
-        CampaignDelivery.initialize(self, sim)
-        BaseScreening.initialize(self, sim)  # Initialize this next
-        return
-
-
-class routine_triage(BaseTriage, RoutineDelivery):
-    """
-    Routine triage - an instance of base triage combined with routine delivery.
-    See base classes for a description of input arguments.
-
-    **Example**:
-        # Example: Triage positive screens into confirmatory testing
-        screened_pos = lambda sim: sim.get_intervention('screening').outcomes['positive']
-        triage = ss.routine_triage(product=my_triage, eligibility=screen_pos, prob=0.9, start_year=2030)
-    """
-
-    def __init__(self, product=None, prob=None, eligibility=None,
-                 years=None, start_year=None, end_year=None, annual_prob=None, **kwargs):
-        BaseTriage.__init__(self, product=product, eligibility=eligibility, **kwargs)
-        RoutineDelivery.__init__(self, prob=prob, start_year=start_year, end_year=end_year, years=years,
-                                 annual_prob=annual_prob)
-        return
-
-    def initialize(self, sim):
-        RoutineDelivery.initialize(self, sim)  # Initialize this first, as it ensures that prob is interpolated properly
-        BaseTriage.initialize(self, sim)  # Initialize this next
-        return
-
-
-class campaign_triage(BaseTriage, CampaignDelivery):
-    """
-    Campaign triage - an instance of base triage combined with campaign delivery.
-    See base classes for a description of input arguments.
-
-    **Examples**:
-        # Example: In 2030, triage all positive screens into confirmatory testing
-        screened_pos = lambda sim: sim.get_intervention('screening').outcomes['positive']
-        triage1 = hpv.campaign_triage(product=my_triage, eligibility=screen_pos, prob=0.9, years=2030)
-    """
-
-    def __init__(self, product=None, sex=None, eligibility=None,
-                 prob=None, years=None, interpolate=None, annual_prob=None, **kwargs):
-        BaseTriage.__init__(self, product=product, sex=sex, eligibility=eligibility, **kwargs)
-        CampaignDelivery.__init__(self, prob=prob, years=years, interpolate=interpolate, annual_prob=annual_prob)
-        return
-
-    def initialize(self, sim):
-        CampaignDelivery.initialize(self, sim)
-        BaseTriage.initialize(self, sim)
-        return
 
 
 class HIV_testing(ss.Intervention):
@@ -371,31 +515,29 @@ class HIV_testing(ss.Intervention):
     Probability-based testing
     """
 
-    def __init__(self, symp_prob, sensitivity, disease, *args, test_delay_mean=None, vac_symp_prob=np.nan,
-                 asymp_prob=np.nan, exclude=None, test_delay=None, **kwargs):
+    def __init__(self, test_prob, sensitivity, disease, *args, test_delay_mean=None, vac_symp_prob=np.nan,
+                 asymp_prob=np.nan, FSW_prob=None, exclude=None, test_delay=None, **kwargs):
         """
         Args:
-            symp_prob:
-            sensitivity:
-            test_delay_mean: Mean test delay - note that the minimum test delay is 1, so test_delay_mean=0 will result in all tests taking exactly 1 day to be returned
-            test_delay: If specified, don't sample from the test delay
-            *args:
-            vac_symp_prob: If provided, specify an ABSOLUTE testing rate for symptomatic vaccinated people. If nan, they will test at the same rate as the unvaccinated people
-            exclude: If provided, specify a list/array of indices of people that should not be tested via this intervention
             **kwargs:
         """
 
         super().__init__(*args, **kwargs)
 
         assert (test_delay_mean is None) != (
-                    test_delay is None), "Either the mean test delay or the absolute test delay must be specified"
+                test_delay is None), "Either the mean test delay or the absolute test delay must be specified"
         self.results = ss.Results(self.name)
 
         if asymp_prob == np.nan:
             self.asymp_prob = 0
         else:
             self.asymp_prob = asymp_prob
-        self.symp_prob = symp_prob
+        if FSW_prob.all() is None:
+            self.FSW_prob = test_prob
+        else:
+            self.FSW_prob = FSW_prob
+        self.test_prob = test_prob
+
         if not isinstance(sensitivity, dict):
             self.sensitivity = {"symptomatic": sensitivity}
         else:
@@ -421,6 +563,10 @@ class HIV_testing(ss.Intervention):
         self.test_probs.initialize(sim.people)
         self.delays.initialize(sim.people)
 
+    def apply(self, sim):
+        test_uids = self.select_people(sim)
+        self._test(sim, test_uids)
+
     def schedule_test(self, sim, uids, t: int):
         """
         Schedule a test in the future
@@ -442,6 +588,37 @@ class HIV_testing(ss.Intervention):
             self._test(sim, uids)
         else:
             self._scheduled_tests[t] += uids.tolist()
+
+    def test(self, uids, t, test_sensitivity=1.0, loss_prob=0.0, test_delay=0):
+        '''
+        Method to test people. Typically not to be called by the user directly;
+        see the test_num() and test_prob() interventions.
+
+        Args:
+            inds: indices of who to test
+            test_sensitivity (float): probability of a true positive
+            loss_prob (float): probability of loss to follow-up
+            test_delay (int): number of days before test results are ready
+        '''
+
+        uids = np.unique(uids)
+        self.tested[uids] = True
+        self.ti_tested[uids] = t  # Only keep the last time they tested
+
+        is_infectious = uids[self.infectious[uids]]
+        pos_test = np.random.random(len(is_infectious)) < test_sensitivity
+        is_inf_pos = is_infectious[pos_test]
+
+        not_diagnosed = is_inf_pos[np.isnan(self.ti_diagnosed[is_inf_pos])]
+        not_lost = np.random.random(len(not_diagnosed)) < 1.0 - loss_prob
+        final_uids = not_diagnosed[not_lost]
+
+        # Store the date the person will be diagnosed, as well as the date they took the test which will come back
+        # positive
+        self.ti_diagnosed[final_uids] = t + test_delay
+        self.ti_pos_test[final_uids] = t
+
+        return final_uids
 
     def _test(self, sim, test_uids):
         # After testing (via self.apply or self.schedule_test) perform some post-testing tasks
@@ -472,12 +649,6 @@ class HIV_testing(ss.Intervention):
         positive_today = ss.true(sim.diseases[self.disease].ti_pos_test[test_uids] == sim.ti)
 
         sim.diseases[self.disease].ti_diagnosed[positive_today] = sim.ti + self.delays[positive_today]
-        #
-        # # Schedule ART Treatment:
-        # ART_delay = self.delays[test_uids]
-        # for delay in set(ART_delay.tolist()):
-        #     match_delay = ART_delay == delay
-        #     sim.diseases[self.disease].schedule_ART_treatment(test_uids[match_delay], sim.ti, period=delay)
 
         # Logging
         self.n_positive[sim.ti] = len(positive_today)
@@ -506,11 +677,6 @@ class HIV_testing(ss.Intervention):
         test_uids = ss.true(
             np.random.random(self.test_probs.shape) < self.test_probs)  # Finally, calculate who actually tests
         return test_uids
-
-    def apply(self, sim):
-
-        test_uids = self.select_people(sim)
-        self._test(sim, test_uids)
 
     def clean_uid(self, sim):
         """
@@ -708,7 +874,8 @@ class ART(ss.Intervention):
         """
         Check who is stopping ART treatment
         """
-        stop_uids = self.check_uids(~sim.diseases[self.disease].on_art, sim.diseases[self.disease].ti_stop_art, sim.ti, filter_uids=None)
+        stop_uids = self.check_uids(~sim.diseases[self.disease].on_art, sim.diseases[self.disease].ti_stop_art, sim.ti,
+                                    filter_uids=None)
         sim.diseases[self.disease].on_art[stop_uids] = False
         sim.diseases[self.disease].ti_art[stop_uids] = np.nan
         sim.diseases[self.disease].ti_stop_art[stop_uids] = np.nan
@@ -724,7 +891,8 @@ class ART(ss.Intervention):
 
         # Get the current ART coverage. If year is not available, assume 90%
         if len(self.pars.ART_coverages_df[self.pars.ART_coverages_df['Years'] == sim.year]['Value'].tolist()) > 0:
-            ART_coverage_this_year = self.pars.ART_coverages_df[self.pars.ART_coverages_df['Years'] == sim.year]['Value'].tolist()[0]
+            ART_coverage_this_year = \
+                self.pars.ART_coverages_df[self.pars.ART_coverages_df['Years'] == sim.year]['Value'].tolist()[0]
         else:
             ART_coverage_this_year = int(0.9 * len(ss.true(sim.diseases[self.disease].infected)))
 
@@ -764,6 +932,7 @@ class ART(ss.Intervention):
             # sim.diseases[self.disease].ti_stop_art[start_uids] = sim.ti + self.pars.duration_on_ART.rvs(len(start_uids)).astype(int)
 
         return
+
 
 # %% Vaccination
 __all__ += ['BaseVaccination', 'routine_vx', 'campaign_vx']
@@ -816,43 +985,6 @@ class BaseVaccination(Intervention):
         return accept_uids
 
 
-class routine_vx(BaseVaccination, RoutineDelivery):
-    """
-    Routine vaccination - an instance of base vaccination combined with routine delivery.
-    See base classes for a description of input arguments.
-    """
-
-    def __init__(self, product=None, prob=None, eligibility=None,
-                 start_year=None, end_year=None, years=None, **kwargs):
-        BaseVaccination.__init__(self, product=product, eligibility=eligibility, **kwargs)
-        RoutineDelivery.__init__(self, prob=prob, start_year=start_year, end_year=end_year, years=years)
-        return
-
-    def initialize(self, sim):
-        RoutineDelivery.initialize(self, sim)  # Initialize this first, as it ensures that prob is interpolated properly
-        BaseVaccination.initialize(self, sim)  # Initialize this next
-        return
-
-
-class campaign_vx(BaseVaccination, CampaignDelivery):
-    """
-    Campaign vaccination - an instance of base vaccination combined with campaign delivery.
-    See base classes for a description of input arguments.
-    """
-
-    def __init__(self, product=None, prob=None, eligibility=None,
-                 years=None, interpolate=True, **kwargs):
-        BaseVaccination.__init__(self, product=product, eligibility=eligibility, **kwargs)
-        CampaignDelivery.__init__(self, prob=prob, years=years, interpolate=interpolate)
-        return
-
-    def initialize(self, sim):
-        CampaignDelivery.initialize(self,
-                                    sim)  # Initialize this first, as it ensures that prob is interpolated properly
-        BaseVaccination.initialize(self, sim)  # Initialize this next
-        return
-
-
 # %% Custom Interventions
 __all__ += ['test_ART']
 
@@ -903,7 +1035,8 @@ class test_ART(ss.Intervention):
         """
         for index, uid in enumerate(self.uids):
             # Check if it's time to infect this agent:
-            if sim.ti == self.infect_uids_t[index] and uid in sim.people.alive.uid and sim.diseases[self.disease].infected[uid] == False:
+            if sim.ti == self.infect_uids_t[index] and uid in sim.people.alive.uid and \
+                    sim.diseases[self.disease].infected[uid] == False:
                 sim.diseases[self.disease].infected[uid] = True
                 sim.diseases[self.disease].ti_infected[uid] = sim.ti
                 sim.diseases[self.disease].ti_since_untreated[uid] = sim.ti
