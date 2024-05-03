@@ -11,7 +11,7 @@ import sciris as sc
 import seaborn as sns
 from stisim.networks import StructuredSexual
 from stisim.diseases.hiv import HIV
-from stisim.interventions import ART, HIV_testing, test_ART, BaseTest, routine_screening
+from stisim.interventions import ART, HIV_testing, test_ART, BaseTest
 from matplotlib.ticker import FuncFormatter
 
 quick_run = False
@@ -216,18 +216,21 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
 
     # Testing intervention
     my_diagnostics_data = pd.DataFrame(
-        {'name': 'test_1',
+        {'name': 'FSW_Testing',
          'state': ['susceptible', 'susceptible'],
          'disease': 'hiv',
-         'probability': [0.5, 0.5],
+         'probability': [0.75, 0.25],
          'result': ['positive', 'negative']})
+
     my_test = ss.Dx(df=my_diagnostics_data)
-    screen_eligible = lambda sim: sim.people.alive
-    HIV_testing = ss.BaseTest(
-        prob=0.2,
+    test_eligible = lambda sim: sim.networks.structuredsexual.fsw & \
+                                (np.isnan(sim.diseases['hiv'].ti_diagnosed) | (sim.ti > (sim.diseases['hiv'].ti_diagnosed + 12)))
+    FSW_testing = BaseTest(
+        prob=0.72,
         product=my_test,
-        eligibility=screen_eligible,
-        label='Test1'
+        eligibility=test_eligible,
+        label='FSW_Testing',
+        disease='hiv'
     )
 
     sim_kwargs = dict(
@@ -239,7 +242,7 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
         remove_dead=1,  # How many timesteps to go between removing dead agents (0 to not remove)
         diseases=hiv,
         networks=ss.ndict(sexual, maternal),
-        interventions=[HIV_testing,
+        interventions=[FSW_testing,
                        ART(ART_coverages_df=ART_coverages_df,
                            ART_prob=0.9,
                            duration_on_ART=ss.normal(loc=18, scale=5),# https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
