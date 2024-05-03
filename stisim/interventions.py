@@ -168,7 +168,7 @@ class BaseTest(ss.Intervention):
         '''
         Deliver the diagnostics by finding who's eligible, finding who accepts, and applying the product.
         '''
-        ti = sc.findinds(np.unique(np.floor(sim.yearvec)), np.floor(sim.year))[0]
+        ti = np.minimum(len(self.prob[group[0]])-1, sc.findinds(np.unique(np.floor(sim.yearvec)), np.floor(sim.year))[0])
         prob = self.prob[group[0]][ti]  # Get the proportion of people who will be tested this timestep
 
         eligible_inds = self.check_eligibility(sim, group[0])  # Check eligibility
