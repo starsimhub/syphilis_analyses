@@ -15,6 +15,7 @@ class HIV(ss.Infection):
 
     def __init__(self, pars=None, par_dists=None, *args, **kwargs):
         # States
+
         self.add_states(
             ss.State('on_art', bool, False),
             ss.State('art_transmission_reduction', float, np.nan),
@@ -68,6 +69,8 @@ class HIV(ss.Infection):
         self.pars.transmission_timecourse = self.get_transmission_timecourse()
         self.pars.viral_timecourse, self.pars.cd4_timecourse = self.get_viral_dynamics_timecourses()
         self.rel_trans[sim.people.uid] = 0
+        # self.is_FSW = sim.networks.structuredsexual.fsw
+        # self.is_not_FSW = ~sim.networks.structuredsexual.fsw
         # self.art_transmission_reduction = self.pars.art_efficacy / 6  # Assumption: 6 months
 
         return

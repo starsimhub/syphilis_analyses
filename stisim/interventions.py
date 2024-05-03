@@ -112,11 +112,12 @@ class BaseTest(ss.Intervention):
          kwargs         (dict)          : passed to Intervention()
     '''
 
-    def __init__(self, product=None, prob=None, eligibility=None, disease=None, **kwargs):
+    def __init__(self, product=None, prob=None, eligibility=None, disease=None, groups=None, **kwargs):
         ss.Intervention.__init__(self, **kwargs)
         self.prob = sc.promotetoarray(prob)
         self.eligibility = eligibility
         self.disease = disease
+        self.groups = groups
         self._parse_product(product)
         self.timepoints = []  # The start and end timepoints of the intervention
 
@@ -147,10 +148,11 @@ class BaseTest(ss.Intervention):
     def apply(self, sim):
         self.outcomes = {k: np.array([], dtype=np.int64) for k in self.product.hierarchy}
 
-        accept_inds = self.deliver(sim)
-        sim.diseases[self.disease].diagnosed[accept_inds] = True
-        # sim.people.screens[accept_inds] += 1
-        sim.diseases[self.disease].ti_diagnosed[accept_inds] = sim.ti
+        for index, group in enumerate(self.groups):
+            accept_inds = self.deliver(sim, (index, group))
+            sim.diseases[self.disease].diagnosed[accept_inds] = True
+            # sim.people.screens[accept_inds] += 1
+            sim.diseases[self.disease].ti_diagnosed[accept_inds] = sim.ti
 
         # Store results
         idx = sim.ti # int(sim.t / sim.resfreq)
@@ -162,22 +164,23 @@ class BaseTest(ss.Intervention):
 
         return accept_inds
 
-    def deliver(self, sim):
+    def deliver(self, sim, group):
         '''
         Deliver the diagnostics by finding who's eligible, finding who accepts, and applying the product.
         '''
-        #ti = sc.findinds(self.timepoints, sim.ti)[0]
-        prob = self.prob[0] #[ti]  # Get the proportion of people who will be tested this timestep
-        eligible_inds = self.check_eligibility(sim)  # Check eligibility
+        ti = sc.findinds(np.unique(np.floor(sim.yearvec)), np.floor(sim.year))[0]
+        prob = self.prob[group[0]][ti]  # Get the proportion of people who will be tested this timestep
+
+        eligible_inds = self.check_eligibility(sim, group[0])  # Check eligibility
         accept_inds = select_people(eligible_inds, prob=prob)  # Find people who accept
         if len(accept_inds):
             idx = sim.ti # int(sim.ti / sim.resfreq)
             # self.n_products_used[idx] += sim.people.scale_flows(accept_inds)
-            self.outcomes = self.product.administer(sim, accept_inds)  # Actually administer the diagnostic, filtering people into outcome categories
+            self.outcomes = self.product.administer(sim, accept_inds, group[1])  # Actually administer the diagnostic, filtering people into outcome categories
         return accept_inds
 
-    def check_eligibility(self, sim):
-        return ss.true(self.eligibility(sim))
+    def check_eligibility(self, sim, index):
+        return ss.true(self.eligibility[index](sim))
 
 
 class HIV_testing(ss.Intervention):
@@ -383,32 +386,24 @@ class ART(ss.Intervention):
     def apply(self, sim):
 
         diagnosed = ss.true(sim.diseases[self.disease].ti_diagnosed == sim.ti)
-        self.schedule_ART_treatment(diagnosed, sim.ti)
+
+        # Get the current ART coverage. If year is not available, assume 90%
+        if len(self.pars.ART_coverages_df[self.pars.ART_coverages_df['Years'] == sim.year]['Value'].tolist()) > 0:
+            ART_coverage_this_year = self.pars.ART_coverages_df[self.pars.ART_coverages_df['Years'] == sim.year]['Value'].tolist()[0]
+        else:
+            ART_coverage_this_year = int(0.9 * len(ss.true(sim.diseases[self.disease].infected)))
+        ART_coverage = ART_coverage_this_year/len(sim.diseases[self.disease].infected)
+        # Schedule ART for a proportion of the newly diagnosed agents:
+        diagnosed_to_start_ART = diagnosed[np.random.random(len(diagnosed)) < ART_coverage]
 
         # Check who is starting ART
-        self.check_start_ART_treatment(sim)
+        self.start_ART_treatment(sim, diagnosed_to_start_ART)
         # Check who is stopping ART
         self.check_stop_ART_treatment(sim)
         # Apply correction to match ART coverage data:
-        self.ART_coverage_correction(sim)
+        self.ART_coverage_correction(sim, ART_coverage_this_year)
 
-        return
-
-    def schedule_ART_treatment(self, uids, t, start_date=None, period=None):
-        """
-        Schedule ART treatment. Typically not called by the user directly
-
-        Args:
-            inds (int): indices of who to put on ART treatment, specified by check_quar()
-            start_date (int): day to begin ART treatment(defaults to the current day, `sim.t`)
-            period (int): quarantine duration (defaults to ``pars['quar_period']``)
-
-        """
-        start_date = t if start_date is None else int(start_date)
-        uids_ART = uids[np.random.random(len(uids)) < self.pars.ART_prob]
-        period = 1000  # self.pars['quar_period'] if period is None else int(period)
-        for uid in uids_ART:
-            self._pending_ART[start_date].append((uid, start_date + period))
+        # print(ART_coverage_this_year, len(ss.true(sim.diseases[self.disease].on_art)))
         return
 
     def check_uids(self, current, date, t, filter_uids=None):
@@ -423,11 +418,11 @@ class ART(ss.Intervention):
         uids = has_date[t >= date[has_date]]
         return uids
 
-    def check_start_ART_treatment(self, sim):
+    def start_ART_treatment(self, sim, uids):
         """
         Check who is ready to start ART treatment
         """
-        for uid, end_day in self._pending_ART[sim.ti]:
+        for uid in uids:
             if uid in sim.people.alive.uid:
                 sim.diseases[self.disease].on_art[uid] = True
                 sim.diseases[self.disease].ti_art[uid] = sim.ti
@@ -447,19 +442,12 @@ class ART(ss.Intervention):
         sim.diseases[self.disease].ti_since_untreated[stop_uids] = sim.ti
         return
 
-    def ART_coverage_correction(self, sim):
+    def ART_coverage_correction(self, sim, ART_coverage_this_year):
         """
         Adjust number of people on treatment to match data
         """
-        infected_uids_onART = sim.diseases[self.disease].diagnosed & sim.diseases[self.disease].infected & sim.diseases[self.disease].on_art
-        infected_uids_not_onART = sim.diseases[self.disease].diagnosed & sim.diseases[self.disease].infected & ~sim.diseases[self.disease].on_art
-
-        # Get the current ART coverage. If year is not available, assume 90%
-        if len(self.pars.ART_coverages_df[self.pars.ART_coverages_df['Years'] == sim.year]['Value'].tolist()) > 0:
-            ART_coverage_this_year = \
-                self.pars.ART_coverages_df[self.pars.ART_coverages_df['Years'] == sim.year]['Value'].tolist()[0]
-        else:
-            ART_coverage_this_year = int(0.9 * len(ss.true(sim.diseases[self.disease].infected)))
+        infected_uids_onART = sim.diseases[self.disease].diagnosed & sim.diseases[self.disease].on_art
+        infected_uids_not_onART = sim.diseases[self.disease].diagnosed & ~sim.diseases[self.disease].on_art
 
         # Too many agents on treatment -> remove
         if len(ss.true(infected_uids_onART)) > ART_coverage_this_year:
@@ -488,7 +476,10 @@ class ART(ss.Intervention):
             probabilities = (cd4_counts_not_onART / np.sum(cd4_counts_not_onART)).values
             # Probabilities are increasing with CD4 count, therefore flip uid array:
             uids = np.flipud(cd4_counts_not_onART.uid)
-            start_uids = np.random.choice(uids, n_agents_to_start_ART, p=probabilities, replace=False)
+            if n_agents_to_start_ART > len(ss.true(infected_uids_not_onART)):
+                start_uids = ss.true(infected_uids_not_onART)
+            else:
+                start_uids = np.random.choice(uids, n_agents_to_start_ART, p=probabilities, replace=False)
 
             # Put them on ART
             sim.diseases[self.disease].on_art[start_uids] = True
