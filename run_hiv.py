@@ -93,12 +93,13 @@ def plot_hiv(sim_output):
     - n on ART
     """
 
-    ART_coverages_raw = pd.read_csv(f'data/world_bank_art_coverages.csv', skiprows=4).set_index('Country Name').loc[location.capitalize()].dropna()[3:]
+    ART_coverages_raw = pd.read_csv(f'data/world_bank_art_coverages.csv', skiprows=4).set_index('Country Name').loc[
+                            location.capitalize()].dropna()[3:]
     tivec = np.arange(start=1990, stop=2021 + 1 / 12, step=1 / 12)
     ART_coverages_df = pd.DataFrame({"Years": tivec,
                                      "Value": (np.interp(tivec,
                                                          ART_coverages_raw.index.astype(int).tolist(),
-                                                         (ART_coverages_raw.values/100).tolist()))})
+                                                         (ART_coverages_raw.values / 100).tolist()))})
 
     fig, ax = plt.subplots(6, 2, figsize=(20, 15))
 
@@ -124,7 +125,7 @@ def plot_hiv(sim_output):
     ax[2, 0].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_2'], label='Risk Group 2')
     ax[2, 0].legend()
 
-    ax[3, 0].plot(sim_output.index, sim_output['hiv.n_on_art']/sim_output['hiv.n_diagnosed'], label='Modelled')
+    ax[3, 0].plot(sim_output.index, sim_output['hiv.n_on_art'] / sim_output['hiv.n_diagnosed'], label='Modelled')
     ax[3, 0].set_title('ART coverage')
     ax[3, 0].plot(ART_coverages_df["Years"], ART_coverages_df["Value"], label="Data")
     ax[3, 0].legend()
@@ -155,11 +156,14 @@ def get_testing_products():
     HIV_tests_data_raw.loc["Other_avg"] = HIV_tests_data_raw[HIV_tests_data_raw.index != "FSW"].mean()
     tivec = np.arange(start=1990, stop=2020 + 1, step=1)
     FSW_prop = np.interp(tivec,
-                         HIV_tests_data_raw.loc["FSW"].index[~pd.isna(HIV_tests_data_raw.loc["FSW"].values)].astype(int),
+                         HIV_tests_data_raw.loc["FSW"].index[~pd.isna(HIV_tests_data_raw.loc["FSW"].values)].astype(
+                             int),
                          HIV_tests_data_raw.loc["FSW"].values[~pd.isna(HIV_tests_data_raw.loc["FSW"].values)])
     other_prop = np.interp(tivec,
-                           HIV_tests_data_raw.loc["Other_avg"].index[~pd.isna(HIV_tests_data_raw.loc["Other_avg"].values)].astype(int),
-                           HIV_tests_data_raw.loc["Other_avg"].values[~pd.isna(HIV_tests_data_raw.loc["Other_avg"].values)])
+                           HIV_tests_data_raw.loc["Other_avg"].index[
+                               ~pd.isna(HIV_tests_data_raw.loc["Other_avg"].values)].astype(int),
+                           HIV_tests_data_raw.loc["Other_avg"].values[
+                               ~pd.isna(HIV_tests_data_raw.loc["Other_avg"].values)])
 
     ####################################################################################################################
     # Product
@@ -196,9 +200,19 @@ def get_testing_products():
                              label='other_testing',
                              disease='hiv')
 
-    # TODO Add testing for agents with CD4 count <200
+    ####################################################################################################################
+    # CD4 count < 50 testing
+    ####################################################################################################################
 
-    return FSW_testing, other_testing
+    # Agents are eligible for testing  if cd4 count is below 50 and they previously haven't been diagnosed
+    low_cd4_eligibe = lambda sim: (sim.diseases['hiv'].cd4 < 50) & (sim.diseases['hiv'].diagnosed == False)
+    low_cd4_testing = BaseTest(prob=0.9,
+                               product=simple_test,
+                               eligibility=low_cd4_eligibe,
+                               label='low_cd4_testing',
+                               disease='hiv')
+
+    return FSW_testing, other_testing, low_cd4_testing
 
 
 def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, latent_trans=0.075,
@@ -211,7 +225,7 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
     ####################################################################################################################
     hiv = HIV()
     hiv.pars['beta'] = {'structuredsexual': [0.95, 0.95], 'maternal': [0.08, 0.5]}
-    hiv.pars['init_prev'] = ss.bernoulli(p=0.3)
+    hiv.pars['init_prev'] = ss.bernoulli(p=0.1)
     hiv.pars['cd4_start_mean'] = 800
     hiv.pars['primary_acute_inf_dur'] = 2.9  # in months
     hiv.pars['transmission_sd'] = 0.00  # Standard Deviation of normal distribution for transmission.
@@ -219,17 +233,18 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
     ####################################################################################################################
     # Treatment Data
     ####################################################################################################################
-    ART_numbers_raw = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Testing & treatment', skiprows=28).iloc[0:1, 2:43]
+    # ART_numbers_raw = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Testing & treatment', skiprows=28).iloc[0:1, 2:43]
     # HIV_prev_raw = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Optional indicators', skiprows=26).iloc[0:1, 12:29]
     # HIV_prev_raw.columns = np.arange(2000, 2016+1).astype(str)
     # pop_sizes_raw = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Population size', skiprows=72).iloc[0:1, 13:30]
     # pop_sizes_raw.columns = np.arange(2000, 2016+1).astype(str)
-    ART_coverages_raw = pd.read_csv(f'data/world_bank_art_coverages.csv', skiprows=4).set_index('Country Name').loc[location.capitalize()].dropna()[3:]
+    ART_coverages_raw = pd.read_csv(f'data/world_bank_art_coverages.csv', skiprows=4).set_index('Country Name').loc[
+                            location.capitalize()].dropna()[3:]
     tivec = np.arange(start=1990, stop=2021 + 1 / 12, step=1 / 12)
     ART_coverages_df = pd.DataFrame({"Years": tivec,
                                      "Value": (np.interp(tivec,
                                                          ART_coverages_raw.index.astype(int).tolist(),
-                                                         (ART_coverages_raw.values/100).tolist()))})
+                                                         (ART_coverages_raw.values / 100).tolist()))})
     hiv.pars['ART_coverages_df'] = ART_coverages_df
 
     ####################################################################################################################
@@ -252,7 +267,7 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
     ####################################################################################################################
     # Products
     ####################################################################################################################
-    fsw_testing, other_testing = get_testing_products()
+    fsw_testing, other_testing, low_cd4_testing = get_testing_products()
 
     ####################################################################################################################
     # Sim
@@ -268,14 +283,16 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
         networks=ss.ndict(sexual, maternal),
         interventions=[fsw_testing,
                        other_testing,
+                       low_cd4_testing,
                        ART(ART_coverages_df=ART_coverages_df,
-                           duration_on_ART=ss.normal(loc=18, scale=5),# https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
+                           duration_on_ART=ss.normal(loc=18, scale=5),
+                           # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
                            art_efficacy=0.96),
                        validate_ART(disease='hiv',
-                                uids=save_agents,
-                                infect_uids_t=np.repeat(100, len(save_agents)),
-                                stop_ART=True,
-                                restart_ART=True)],
+                                    uids=save_agents,
+                                    infect_uids_t=np.repeat(100, len(save_agents)),
+                                    stop_ART=True,
+                                    restart_ART=True)],
         demographics=[pregnancy, death])
 
     return sim_kwargs
@@ -307,8 +324,8 @@ if __name__ == '__main__':
 
     # Call method in validate_ART intervention:
     # sim.get_interventions(validate_ART)[0].save_viral_histories(sim)
-    #viral_histories = pd.read_csv("viral_histories.csv", index_col=0)
-    #plot_viral_dynamics(viral_histories, save_agents)
+    # viral_histories = pd.read_csv("viral_histories.csv", index_col=0)
+    # plot_viral_dynamics(viral_histories, save_agents)
 
     plot_hiv(output)
 
