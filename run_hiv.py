@@ -8,6 +8,7 @@ import starsim as ss
 import pandas as pd
 import matplotlib.pyplot as plt
 import sciris as sc
+from io import StringIO
 import seaborn as sns
 from stisim.networks import StructuredSexual
 from stisim.products import Dx
@@ -169,13 +170,12 @@ def get_testing_products():
     # Product
     ####################################################################################################################
 
-    testing_data = pd.DataFrame(
-        {'name': 'simple_testing',
-         'state': ['susceptible', 'susceptible', 'infected', 'infected'],
-         'disease': 'hiv',
-         'probability': [0, 1, 1, 0],
-         'result': ['positive', 'negative', 'positive', 'negative']})
-
+    testing_data = pd.read_csv(StringIO("""name,state,disease,result,probability
+                    simple testing,susceptible,hiv,positive,0
+                    simple testing,susceptible,hiv,negative,1
+                    simple testing,infected,hiv,positive,1
+                    simple testing,infected,hiv,negative,0
+                    """), sep=",")
     simple_test = Dx(df=testing_data)
 
     ####################################################################################################################
