@@ -160,38 +160,50 @@ def get_testing_products():
     HIV_tests_data_raw.loc["Other_avg"] = HIV_tests_data_raw[HIV_tests_data_raw.index != "FSW"].mean()
     tivec = np.arange(start=1990, stop=2020 + 1, step=1)
     FSW_prop = np.interp(tivec,
-                         HIV_tests_data_raw.loc["FSW"].index[~pd.isna(HIV_tests_data_raw.loc["FSW"].values)].astype(
-                             int),
+                         HIV_tests_data_raw.loc["FSW"].index[~pd.isna(HIV_tests_data_raw.loc["FSW"].values)].astype(int),
                          HIV_tests_data_raw.loc["FSW"].values[~pd.isna(HIV_tests_data_raw.loc["FSW"].values)])
     other_prop = np.interp(tivec,
-                           HIV_tests_data_raw.loc["Other_avg"].index[
-                               ~pd.isna(HIV_tests_data_raw.loc["Other_avg"].values)].astype(int),
-                           HIV_tests_data_raw.loc["Other_avg"].values[
-                               ~pd.isna(HIV_tests_data_raw.loc["Other_avg"].values)])
+                           HIV_tests_data_raw.loc["Other_avg"].index[~pd.isna(HIV_tests_data_raw.loc["Other_avg"].values)].astype(int),
+                           HIV_tests_data_raw.loc["Other_avg"].values[~pd.isna(HIV_tests_data_raw.loc["Other_avg"].values)])
 
-    #################################################################
-    # Simple Testing
-    #################################################################
+    ####################################################################################################################
+    # Product
+    ####################################################################################################################
 
-    # Testing intervention
     testing_data = pd.DataFrame(
         {'name': 'simple_testing',
-         'state': ['susceptible', 'susceptible', 'susceptible', 'susceptible', 'infected', 'infected',  'infected', 'infected'],
+         'state': ['susceptible', 'susceptible', 'infected', 'infected'],
          'disease': 'hiv',
-         'groups': ['fsw', 'fsw', 'other', 'other', 'fsw', 'fsw', 'other', 'other'],
-         'probability': [0.05, 0.95, 0.05, 0.95, 1, 0, 1, 0],
-         'result': ['positive', 'negative', 'positive', 'negative', 'positive', 'negative', 'positive', 'negative']})
+         'probability': [0, 1, 1, 0],
+         'result': ['positive', 'negative', 'positive', 'negative']})
 
-    fsw_test = ss.Dx(df=testing_data)
-    test_eligible = [lambda sim: sim.networks.structuredsexual.fsw & (np.isnan(sim.diseases['hiv'].ti_diagnosed) | (sim.ti > (sim.diseases['hiv'].ti_diagnosed + 12))),
-                     lambda sim: ~sim.networks.structuredsexual.fsw & (np.isnan(sim.diseases['hiv'].ti_diagnosed) | (sim.ti > (sim.diseases['hiv'].ti_diagnosed + 12)))]
-    simple_testing = BaseTest(prob=[FSW_prop, other_prop],
-                              product=fsw_test,
-                              eligibility=test_eligible,
-                              groups=['fsw', 'other'],
-                              label='simple_testing',
-                              disease='hiv')
-    return simple_testing
+    simple_test = Dx(df=testing_data)
+
+    ####################################################################################################################
+    # FSW Testing
+    ####################################################################################################################
+
+    FSW_eligible = lambda sim: sim.networks.structuredsexual.fsw & (np.isnan(sim.get_intervention('fsw_testing').ti_screened) | (sim.ti > (sim.get_intervention('fsw_testing').ti_screened + 12)))
+    FSW_testing = BaseTest(prob=FSW_prop,
+                           product=simple_test,
+                           eligibility=FSW_eligible,
+                           label='fsw_testing',
+                           disease='hiv')
+
+    ####################################################################################################################
+    # Remaining population testing
+    ####################################################################################################################
+
+    other_eligible = lambda sim: ~sim.networks.structuredsexual.fsw & (np.isnan(sim.get_intervention('other_testing').ti_screened) | (sim.ti > (sim.get_intervention('other_testing').ti_screened + 12)))
+    other_testing = BaseTest(prob=other_prop,
+                             product=simple_test,
+                             eligibility=other_eligible,
+                             label='other_testing',
+                             disease='hiv')
+
+    # TODO Add testing for agents with CD4 count <200
+
+    return FSW_testing, other_testing
 
 
 def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, latent_trans=0.075,
@@ -249,13 +261,12 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
         remove_dead=1,  # How many timesteps to go between removing dead agents (0 to not remove)
         diseases=hiv,
         networks=ss.ndict(sexual, maternal),
-        interventions=[simple_testing,
+        interventions=[fsw_testing,
+                       other_testing,
                        ART(ART_coverages_df=ART_coverages_df,
-                           ART_prob=0.9,
-                           duration_on_ART=ss.normal(loc=18, scale=5),
-                           # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
+                           duration_on_ART=ss.normal(loc=18, scale=5),# https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
                            art_efficacy=0.96),
-                       test_ART(disease='hiv',
+                       validate_ART(disease='hiv',
                                 uids=save_agents,
                                 infect_uids_t=np.repeat(100, len(save_agents)),
                                 stop_ART=True,
@@ -289,10 +300,10 @@ if __name__ == '__main__':
                           save_agents=save_agents)
     output.to_csv("HIV_output.csv")
 
-    # Call method in test_ART intervention:
-    sim.get_interventions(test_ART)[0].save_viral_histories(sim)
-    viral_histories = pd.read_csv("viral_histories.csv", index_col=0)
-    plot_viral_dynamics(viral_histories, save_agents)
+    # Call method in validate_ART intervention:
+    # sim.get_interventions(validate_ART)[0].save_viral_histories(sim)
+    #viral_histories = pd.read_csv("viral_histories.csv", index_col=0)
+    #plot_viral_dynamics(viral_histories, save_agents)
 
     plot_hiv(output)
 

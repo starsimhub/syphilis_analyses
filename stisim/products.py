@@ -18,13 +18,13 @@ class Product(ss.Module):
         raise NotImplementedError
 
 
-class Dx(Product):
+class Dx(ss.Product):
     """
-    Generic class for diagnostics 
+    Generic class for diagnostics
     """
 
     def __init__(self, df, hierarchy=None, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        ss.Product.__init__(self, *args, **kwargs)
         self.df = df
         self.health_states = df.state.unique()
         self.diseases = df.disease.unique()
@@ -46,7 +46,7 @@ class Dx(Product):
     def administer(self, sim, uids, return_format='dict'):
         """
         Administer a testing product.
-        
+
         Returns:
 
              if return_format=='array': an array of length len(inds) with integer entries that map each person to one of the result_states
@@ -55,11 +55,12 @@ class Dx(Product):
 
         # Pre-fill with the default value, which is set to be the last value in the hierarchy
         results = sc.dataframe({'uids': uids, 'result': self.default_value})
+        results.index = uids
 
         for disease in self.diseases:
             for state in self.health_states:
                 this_state = getattr(sim.diseases[disease], state)
-                these_uids = ss.true(this_state[uids])
+                these_uids = ss.true(this_state[uids])  # Indices of agents in this state and eligible for testing
 
                 # Filter the dataframe to extract test results for people in this state
                 df_filter = (self.df.state == state) & (self.df.disease == disease)
@@ -68,12 +69,11 @@ class Dx(Product):
                 self.result_dist.pk = probs  # Overwrite distribution probabilities
 
                 # Sort people into one of the possible result states and then update their overall results
-                this_result = self.result_dist.rvs(these_uids)-these_uids # TODO: check!
-                row_inds = results.uids.isin(these_uids)
-                results.loc[row_inds, 'result'] = np.minimum(this_result, results.loc[row_inds, 'result'])
+                this_result = self.result_dist.rvs(these_uids)  # - these_uids # TODO: check!
+                results.loc[these_uids, 'result'] = np.minimum(this_result, np.array(results.loc[these_uids]['result']))
 
             if return_format == 'dict':
-                output = {self.hierarchy[i]: results[results.result == i].uids.values for i in range(len(self.hierarchy))}
+                output = {self.hierarchy[i]: uids[results['result'] == i] for i in range(len(self.hierarchy))}
             elif return_format == 'array':
                 output = results
 
