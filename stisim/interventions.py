@@ -112,13 +112,16 @@ class BaseTest(ss.Intervention):
          kwargs         (dict)          : passed to Intervention()
     '''
 
-    def __init__(self, product=None, prob=None, eligibility=None, disease=None, groups=None, **kwargs):
+    def __init__(self, product=None, prob=None, eligibility=None, disease=None, **kwargs):
         ss.Intervention.__init__(self, **kwargs)
+
         self.prob = sc.promotetoarray(prob)
         self.eligibility = eligibility
         self.disease = disease
-        self.groups = groups
         self._parse_product(product)
+        self.screened = ss.State('screened', bool, False)
+        self.ti_screened = ss.State('ti_screened', float, np.nan)
+        self.outcomes = None
         self.timepoints = []  # The start and end timepoints of the intervention
 
     def _parse_product(self, product):
@@ -147,40 +150,40 @@ class BaseTest(ss.Intervention):
 
     def apply(self, sim):
         self.outcomes = {k: np.array([], dtype=np.int64) for k in self.product.hierarchy}
+        accept_inds = self.deliver(sim)
+        self.screened[accept_inds] = True
+        sim.diseases[self.disease].diagnosed[self.outcomes['positive']] = True
+        self.ti_screened[accept_inds] = sim.ti
+        sim.diseases[self.disease].ti_diagnosed[self.outcomes['positive']] = sim.ti
 
-        for index, group in enumerate(self.groups):
-            accept_inds = self.deliver(sim, (index, group))
-            sim.diseases[self.disease].diagnosed[accept_inds] = True
-            # sim.people.screens[accept_inds] += 1
-            sim.diseases[self.disease].ti_diagnosed[accept_inds] = sim.ti
 
         # Store results
         idx = sim.ti # int(sim.t / sim.resfreq)
-        new_test_inds = accept_inds[np.logical_not(sim.diseases[self.disease].diagnosed[accept_inds])]  # Figure out people who are getting screened for the first time
-        n_new_people = sim.people.scale_flows(new_test_inds)  # Scale
-        n_new_tests = sim.people.scale_flows(accept_inds)  # Scale
+        #new_test_inds = accept_inds[np.logical_not(sim.diseases[self.disease].diagnosed[self.outcomes['positive']])]  # Figure out people who are getting screened for the first time
+        #n_new_people = sim.people.scale_flows(new_test_inds)  # Scale
+        #n_new_tests = sim.people.scale_flows(accept_inds)  # Scale
         # sim.results['new_tested'][idx] += n_new_people
         # sim.results['new_tests'][idx] += n_new_tests
 
         return accept_inds
 
-    def deliver(self, sim, group):
+    def deliver(self, sim):
         '''
         Deliver the diagnostics by finding who's eligible, finding who accepts, and applying the product.
         '''
-        ti = np.minimum(len(self.prob[group[0]])-1, sc.findinds(np.unique(np.floor(sim.yearvec)), np.floor(sim.year))[0])
-        prob = self.prob[group[0]][ti]  # Get the proportion of people who will be tested this timestep
+        ti = np.minimum(len(self.prob)-1, sc.findinds(np.unique(np.floor(sim.yearvec)), np.floor(sim.year))[0])
+        prob = self.prob[ti]  # Get the proportion of people who will be tested this timestep
 
-        eligible_inds = self.check_eligibility(sim, group[0])  # Check eligibility
+        eligible_inds = self.check_eligibility(sim)  # Check eligibility
         accept_inds = select_people(eligible_inds, prob=prob)  # Find people who accept
         if len(accept_inds):
             idx = sim.ti # int(sim.ti / sim.resfreq)
             # self.n_products_used[idx] += sim.people.scale_flows(accept_inds)
-            self.outcomes = self.product.administer(sim, accept_inds, group[1])  # Actually administer the diagnostic, filtering people into outcome categories
+            self.outcomes = self.product.administer(sim, accept_inds)  # Actually administer the diagnostic, filtering people into outcome categories
         return accept_inds
 
-    def check_eligibility(self, sim, index):
-        return ss.true(self.eligibility[index](sim))
+    def check_eligibility(self, sim):
+        return ss.true(self.eligibility(sim))
 
 
 class HIV_testing(ss.Intervention):
@@ -368,7 +371,6 @@ class ART(ss.Intervention):
 
         pars = ss.omergeleft(pars,
                              ART_coverages_df=None,
-                             ART_prob=0.9,
                              duration_on_ART=ss.normal(loc=18, scale=5),
                              art_efficacy=0.96)
 
@@ -391,8 +393,8 @@ class ART(ss.Intervention):
         if len(self.pars.ART_coverages_df[self.pars.ART_coverages_df['Years'] == sim.year]['Value'].tolist()) > 0:
             ART_coverage_this_year = self.pars.ART_coverages_df[self.pars.ART_coverages_df['Years'] == sim.year]['Value'].tolist()[0]
         else:
-            ART_coverage_this_year = int(0.9 * len(ss.true(sim.diseases[self.disease].infected)))
-        ART_coverage = ART_coverage_this_year/len(sim.diseases[self.disease].infected)
+            ART_coverage_this_year = 0.9 # Assume 90% coverage
+        ART_coverage = ART_coverage_this_year
         # Schedule ART for a proportion of the newly diagnosed agents:
         diagnosed_to_start_ART = diagnosed[np.random.random(len(diagnosed)) < ART_coverage]
 
@@ -401,7 +403,7 @@ class ART(ss.Intervention):
         # Check who is stopping ART
         self.check_stop_ART_treatment(sim)
         # Apply correction to match ART coverage data:
-        self.ART_coverage_correction(sim, ART_coverage_this_year)
+        self.ART_coverage_correction(sim, ART_coverage * len(ss.true(sim.diseases[self.disease].diagnosed)))
 
         # print(ART_coverage_this_year, len(ss.true(sim.diseases[self.disease].on_art)))
         return
@@ -494,7 +496,7 @@ class ART(ss.Intervention):
 __all__ += ['test_ART']
 
 
-class test_ART(ss.Intervention):
+class validate_ART(ss.Intervention):
     """
 
     """

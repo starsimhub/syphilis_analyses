@@ -10,8 +10,9 @@ import matplotlib.pyplot as plt
 import sciris as sc
 import seaborn as sns
 from stisim.networks import StructuredSexual
+from stisim.products import Dx
 from stisim.diseases.hiv import HIV
-from stisim.interventions import ART, HIV_testing, test_ART, BaseTest
+from stisim.interventions import ART, HIV_testing, validate_ART, BaseTest
 from matplotlib.ticker import FuncFormatter
 
 quick_run = False
@@ -92,27 +93,22 @@ def plot_hiv(sim_output):
     - n on ART
     """
 
-    ART_coverages_raw = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Testing & treatment',
-                                      skiprows=28).iloc[0:1, 2:43]
+    ART_coverages_raw = pd.read_csv(f'data/world_bank_art_coverages.csv', skiprows=4).set_index('Country Name').loc[location.capitalize()].dropna()[3:]
     tivec = np.arange(start=1990, stop=2021 + 1 / 12, step=1 / 12)
-    pop_scale = total_pop / int(10e3)
     ART_coverages_df = pd.DataFrame({"Years": tivec,
                                      "Value": (np.interp(tivec,
-                                                         ART_coverages_raw.columns.values[
-                                                             ~pd.isna(ART_coverages_raw.values)[0]].astype(int),
-                                                         ART_coverages_raw.values[
-                                                             ~pd.isna(ART_coverages_raw.values)]) / pop_scale).astype(
-                                         int)})
+                                                         ART_coverages_raw.index.astype(int).tolist(),
+                                                         (ART_coverages_raw.values/100).tolist()))})
 
     fig, ax = plt.subplots(6, 2, figsize=(20, 15))
 
     # sim_output = sim_output.iloc[1:]
-    ax[0, 0].plot(sim_output.iloc[1:].index, sim_output.iloc[1:]['hiv.new_infections'])
+    ax[0, 0].plot(sim_output.index, sim_output['hiv.new_infections'])
     ax[0, 0].set_title('New infections')
     ax[0, 1].plot(sim_output.index, sim_output['hiv.cum_infections'])
     ax[0, 1].set_title('Cumulative infections')
 
-    ax[1, 0].plot(sim_output.iloc[1:].index, sim_output.iloc[1:]['deaths.new'])
+    ax[1, 0].plot(sim_output.index, sim_output['deaths.new'])
     ax[1, 0].set_title('New Deaths')
     # ax[1, 1].plot(sim_output.index, sim_output['deaths.cumulative'])
     # ax[1, 1].set_title('Cumulative Deaths')
@@ -128,11 +124,11 @@ def plot_hiv(sim_output):
     ax[2, 0].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_2'], label='Risk Group 2')
     ax[2, 0].legend()
 
-    ax[3, 0].plot(sim_output.iloc[1:].index, sim_output.iloc[1:]['hiv.n_on_art'], label='Modelled')
-    ax[3, 0].set_title('Number of people on ART (Mio)')
-    ax[3, 0].plot(ART_coverages_df["Years"][1:], ART_coverages_df["Value"][1:] * pop_scale, label="Data")
+    ax[3, 0].plot(sim_output.index, sim_output['hiv.n_on_art']/sim_output['hiv.n_diagnosed'], label='Modelled')
+    ax[3, 0].set_title('ART coverage')
+    ax[3, 0].plot(ART_coverages_df["Years"], ART_coverages_df["Value"], label="Data")
     ax[3, 0].legend()
-    ax[3, 0].yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f'{x * 1e-6:0.1f}'))
+    # ax[3, 0].yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f'{x * 1e-6:0.1f}'))
     ax[3, 0].set_xlim([2000.0, max(sim_output.iloc[1:].index)])
 
     ax[4, 0].plot(sim_output.iloc[1:].index, sim_output.iloc[1:]['hiv.new_diagnoses'])
@@ -151,7 +147,6 @@ def plot_hiv(sim_output):
 
 
 def get_testing_products():
-
     # Load HIV test data:
     HIV_tests_data_raw = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Testing & treatment',
                                        skiprows=1).iloc[0:15, 1:43]
@@ -211,47 +206,57 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
     """
     Make a sim with HIV
     """
-
+    ####################################################################################################################
+    # HIV Params
+    ####################################################################################################################
     hiv = HIV()
     hiv.pars['beta'] = {'structuredsexual': [0.95, 0.95], 'maternal': [0.08, 0.5]}
     hiv.pars['init_prev'] = ss.bernoulli(p=0.3)
     hiv.pars['cd4_start_mean'] = 800
     hiv.pars['primary_acute_inf_dur'] = 2.9  # in months
     hiv.pars['transmission_sd'] = 0.00  # Standard Deviation of normal distribution for transmission.
-    hiv.pars['death_data'] = [(500, 0.0036 / 12),
-                              (range(350, 500), 0.0036 / 12),
-                              (range(200, 350), 0.0088 / 12),
-                              (range(50, 200), 0.059 / 12),
-                              (range(0, 50), 0.323 / 12)]
 
-    # Read in treatment data:
-    ART_coverages_raw = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Testing & treatment',
-                                      skiprows=28).iloc[0:1, 2:43]
+    ####################################################################################################################
+    # Treatment Data
+    ####################################################################################################################
+    ART_numbers_raw = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Testing & treatment', skiprows=28).iloc[0:1, 2:43]
+    # HIV_prev_raw = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Optional indicators', skiprows=26).iloc[0:1, 12:29]
+    # HIV_prev_raw.columns = np.arange(2000, 2016+1).astype(str)
+    # pop_sizes_raw = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Population size', skiprows=72).iloc[0:1, 13:30]
+    # pop_sizes_raw.columns = np.arange(2000, 2016+1).astype(str)
+    ART_coverages_raw = pd.read_csv(f'data/world_bank_art_coverages.csv', skiprows=4).set_index('Country Name').loc[location.capitalize()].dropna()[3:]
     tivec = np.arange(start=1990, stop=2021 + 1 / 12, step=1 / 12)
-    pop_scale = total_pop / n_agents
     ART_coverages_df = pd.DataFrame({"Years": tivec,
                                      "Value": (np.interp(tivec,
-                                                         ART_coverages_raw.columns.values[
-                                                             ~pd.isna(ART_coverages_raw.values)[0]].astype(int),
-                                                         ART_coverages_raw.values[
-                                                             ~pd.isna(ART_coverages_raw.values)]) / pop_scale).astype(
-                                         int)})
+                                                         ART_coverages_raw.index.astype(int).tolist(),
+                                                         (ART_coverages_raw.values/100).tolist()))})
     hiv.pars['ART_coverages_df'] = ART_coverages_df
 
+    ####################################################################################################################
     # Make demographic modules
+    ####################################################################################################################
+
     fertility_rates = {'fertility_rate': pd.read_csv(f'data/{location}_asfr.csv')}
     pregnancy = ss.Pregnancy(pars=fertility_rates)
     death_rates = {'death_rate': pd.read_csv(f'data/{location}_deaths.csv'), 'units': 1}
     death = ss.Deaths(death_rates)
 
+    ####################################################################################################################
     # Make people and networks
+    ####################################################################################################################
     ss.set_seed(1)
     ppl = ss.People(n_agents, age_data=pd.read_csv(f'data/{location}_age.csv'))
     sexual = StructuredSexual()
     maternal = ss.MaternalNet()
 
-    simple_testing = get_testing_products()
+    ####################################################################################################################
+    # Products
+    ####################################################################################################################
+    fsw_testing, other_testing = get_testing_products()
 
+    ####################################################################################################################
+    # Sim
+    ####################################################################################################################
     sim_kwargs = dict(
         dt=dt,
         total_pop=total_pop,
