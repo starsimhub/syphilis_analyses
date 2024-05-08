@@ -393,7 +393,7 @@ class ART(ss.Intervention):
         if len(self.pars.ART_coverages_df[self.pars.ART_coverages_df['Years'] == sim.year]['Value'].tolist()) > 0:
             ART_coverage_this_year = self.pars.ART_coverages_df[self.pars.ART_coverages_df['Years'] == sim.year]['Value'].tolist()[0]
         else:
-            ART_coverage_this_year = 0.9 # Assume 90% coverage
+            ART_coverage_this_year = self.pars.ART_coverages_df.Value.iloc[-1] # Assume last coverage
         ART_coverage = ART_coverage_this_year
         # Schedule ART for a proportion of the newly diagnosed agents:
         diagnosed_to_start_ART = diagnosed[np.random.random(len(diagnosed)) < ART_coverage]
@@ -472,9 +472,9 @@ class ART(ss.Intervention):
             sim.diseases[self.disease].ti_since_untreated[uids_update_ti_untreated] = sim.ti
 
         # Not enough agents on treatment -> add
-        elif len(infected_uids_not_onART.uids) < ART_coverage_this_year:
+        elif len(infected_uids_onART.uids) < ART_coverage_this_year:
             # Agents with the lowest CD4 count will get on ART:
-            n_agents_to_start_ART = int(ART_coverage_this_year - len(infected_uids_not_onART.uids))
+            n_agents_to_start_ART = int(ART_coverage_this_year - len(infected_uids_onART.uids))
             cd4_counts_not_onART = sim.diseases[self.disease].cd4[infected_uids_not_onART]
             # Sort
             uids_not_onART = infected_uids_not_onART.uids
