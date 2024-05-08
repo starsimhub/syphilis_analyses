@@ -119,8 +119,8 @@ class BaseTest(ss.Intervention):
         self.eligibility = eligibility
         self.disease = disease
         self._parse_product(product)
-        self.screened = ss.State('screened', bool, False)
-        self.ti_screened = ss.State('ti_screened', float, np.nan)
+        self.screened = ss.BoolArr('screened', default=False)
+        self.ti_screened = ss.FloatArr('ti_screened')
         self.outcomes = None
         self.timepoints = []  # The start and end timepoints of the intervention
 
@@ -183,7 +183,7 @@ class BaseTest(ss.Intervention):
         return accept_inds
 
     def check_eligibility(self, sim):
-        return ss.true(self.eligibility(sim))
+        return self.eligibility(sim).uids
 
 
 class HIV_testing(ss.Intervention):
@@ -369,7 +369,7 @@ class ART(ss.Intervention):
 
     def __init__(self, pars=None, par_dists=None, *args, **kwargs):
 
-        pars = ss.omergeleft(pars,
+        pars = ss.dictmergeleft(pars,
                              ART_coverages_df=None,
                              duration_on_ART=ss.normal(loc=18, scale=5),
                              art_efficacy=0.96)
@@ -387,7 +387,7 @@ class ART(ss.Intervention):
 
     def apply(self, sim):
 
-        diagnosed = ss.true(sim.diseases[self.disease].ti_diagnosed == sim.ti)
+        diagnosed = (sim.diseases[self.disease].ti_diagnosed == sim.ti).uids # Uids of agents diagnosed in this time step
 
         # Get the current ART coverage. If year is not available, assume 90%
         if len(self.pars.ART_coverages_df[self.pars.ART_coverages_df['Years'] == sim.year]['Value'].tolist()) > 0:
@@ -403,7 +403,7 @@ class ART(ss.Intervention):
         # Check who is stopping ART
         self.check_stop_ART_treatment(sim)
         # Apply correction to match ART coverage data:
-        self.ART_coverage_correction(sim, ART_coverage * len(ss.true(sim.diseases[self.disease].diagnosed)))
+        self.ART_coverage_correction(sim, ART_coverage * len(sim.diseases[self.disease].diagnosed.uids))
 
         # print(ART_coverage_this_year, len(ss.true(sim.diseases[self.disease].on_art)))
         return
@@ -413,7 +413,7 @@ class ART(ss.Intervention):
         Return indices for which the current state is false and which meet the date criterion
         '''
         if filter_uids is None:
-            not_current = ss.false(current)
+            not_current = current.auids.remove(current.uids)
         else:
             not_current = filter_uids[np.logical_not(current[filter_uids])]
         has_date = not_current[~np.isnan(date[not_current])]
@@ -425,19 +425,18 @@ class ART(ss.Intervention):
         Check who is ready to start ART treatment
         """
         for uid in uids:
-            if uid in sim.people.alive.uid:
-                sim.diseases[self.disease].on_art[uid] = True
-                sim.diseases[self.disease].ti_art[uid] = sim.ti
+            if uid in sim.people.alive.uids:
+                sim.diseases[self.disease].on_art[ss.uids(uid)] = True
+                sim.diseases[self.disease].ti_art[ss.uids(uid)] = sim.ti
                 # Determine when agents goes off ART:
-                sim.diseases[self.disease].ti_stop_art[uid] = sim.ti + int(self.pars.duration_on_ART.rvs(1))
+                sim.diseases[self.disease].ti_stop_art[ss.uids(uid)] = sim.ti + int(self.pars.duration_on_ART.rvs(1))
         return
 
     def check_stop_ART_treatment(self, sim):
         """
         Check who is stopping ART treatment
         """
-        stop_uids = self.check_uids(~sim.diseases[self.disease].on_art, sim.diseases[self.disease].ti_stop_art, sim.ti,
-                                    filter_uids=None)
+        stop_uids = self.check_uids(~sim.diseases[self.disease].on_art, sim.diseases[self.disease].ti_stop_art, sim.ti, filter_uids=None)
         sim.diseases[self.disease].on_art[stop_uids] = False
         sim.diseases[self.disease].ti_art[stop_uids] = np.nan
         sim.diseases[self.disease].ti_stop_art[stop_uids] = np.nan
@@ -452,40 +451,46 @@ class ART(ss.Intervention):
         infected_uids_not_onART = sim.diseases[self.disease].diagnosed & ~sim.diseases[self.disease].on_art
 
         # Too many agents on treatment -> remove
-        if len(ss.true(infected_uids_onART)) > ART_coverage_this_year:
+        if len(infected_uids_onART.uids) > ART_coverage_this_year:
             # Agents with the highest CD4 counts will go off ART:
-            n_agents_to_stop_ART = int(len(ss.true(infected_uids_onART)) - ART_coverage_this_year)
+            n_agents_to_stop_ART = int(len(infected_uids_onART.uids) - ART_coverage_this_year)
             cd4_counts_onART = sim.diseases[self.disease].cd4[infected_uids_onART]
-            cd4_counts_onART.sort(axis=0)
+            # Sort
+            uids_onART = infected_uids_onART.uids
+            cd4_counts_sort_idx = np.argsort(cd4_counts_onART)
+            uids_onART_sorted = uids_onART[cd4_counts_sort_idx]
             # Grab the last n agents with the highest counts
-            probabilities = (cd4_counts_onART / np.sum(cd4_counts_onART)).values
+            probabilities = (cd4_counts_onART / np.sum(cd4_counts_onART))
             # Probabilities are increasing with CD4 count
-            uids = cd4_counts_onART.uid
+            uids = uids_onART_sorted
             stop_uids = np.random.choice(uids, n_agents_to_stop_ART, p=probabilities, replace=False)
-            sim.diseases[self.disease].on_art[stop_uids] = False
-            uids_update_ti_untreated = ss.true(sim.diseases[self.disease].ti_art[stop_uids] != sim.ti)
-            sim.diseases[self.disease].ti_art[stop_uids] = np.nan
-            sim.diseases[self.disease].ti_stop_art[stop_uids] = np.nan
+            sim.diseases[self.disease].on_art[ss.uids(stop_uids)] = False
+            uids_update_ti_untreated = ss.uids(stop_uids[sim.diseases[self.disease].ti_art[ss.uids(stop_uids)] != sim.ti])
+            sim.diseases[self.disease].ti_art[ss.uids(stop_uids)] = np.nan
+            sim.diseases[self.disease].ti_stop_art[ss.uids(stop_uids)] = np.nan
             # Only update when agents actually have been on ART:
             sim.diseases[self.disease].ti_since_untreated[uids_update_ti_untreated] = sim.ti
 
         # Not enough agents on treatment -> add
-        elif len(ss.true(infected_uids_onART)) < ART_coverage_this_year:
+        elif len(infected_uids_not_onART.uids) < ART_coverage_this_year:
             # Agents with the lowest CD4 count will get on ART:
-            n_agents_to_start_ART = int(ART_coverage_this_year - len(ss.true(infected_uids_onART)))
+            n_agents_to_start_ART = int(ART_coverage_this_year - len(infected_uids_not_onART.uids))
             cd4_counts_not_onART = sim.diseases[self.disease].cd4[infected_uids_not_onART]
-            cd4_counts_not_onART.sort(axis=0)
-            probabilities = (cd4_counts_not_onART / np.sum(cd4_counts_not_onART)).values
+            # Sort
+            uids_not_onART = infected_uids_not_onART.uids
+            cd4_counts_sort_idx = np.argsort(cd4_counts_not_onART)
+            uids_not_onART_sorted = uids_not_onART[cd4_counts_sort_idx]
+            probabilities = (cd4_counts_not_onART / np.sum(cd4_counts_not_onART))
             # Probabilities are increasing with CD4 count, therefore flip uid array:
-            uids = np.flipud(cd4_counts_not_onART.uid)
-            if n_agents_to_start_ART > len(ss.true(infected_uids_not_onART)):
-                start_uids = ss.true(infected_uids_not_onART)
+            uids = np.flipud(uids_not_onART_sorted)
+            if n_agents_to_start_ART > len(infected_uids_not_onART.uids):
+                start_uids = infected_uids_not_onART.uids
             else:
                 start_uids = np.random.choice(uids, n_agents_to_start_ART, p=probabilities, replace=False)
 
             # Put them on ART
-            sim.diseases[self.disease].on_art[start_uids] = True
-            sim.diseases[self.disease].ti_art[start_uids] = sim.ti
+            sim.diseases[self.disease].on_art[ss.uids(start_uids)] = True
+            sim.diseases[self.disease].ti_art[ss.uids(start_uids)] = sim.ti
             # Determine when agents go off ART:
             # sim.diseases[self.disease].ti_stop_art[start_uids] = sim.ti + self.pars.duration_on_ART.rvs(len(start_uids)).astype(int)
 
@@ -542,31 +547,30 @@ class validate_ART(ss.Intervention):
         """
         for index, uid in enumerate(self.uids):
             # Check if it's time to infect this agent:
-            if sim.ti == self.infect_uids_t[index] and uid in sim.people.alive.uid and \
-                    sim.diseases[self.disease].infected[uid] == False:
-                sim.diseases[self.disease].infected[uid] = True
-                sim.diseases[self.disease].ti_infected[uid] = sim.ti
-                sim.diseases[self.disease].ti_since_untreated[uid] = sim.ti
-                sim.diseases[self.disease].susceptible[uid] = False
-                sim.diseases[self.disease].ti_infectious[uid] = sim.ti + 14
+            if sim.ti == self.infect_uids_t[index] and uid in sim.people.alive.uids and sim.diseases[self.disease].infected[ss.uids(uid)] == False:
+                sim.diseases[self.disease].infected[ss.uids(uid)] = True
+                sim.diseases[self.disease].ti_infected[ss.uids(uid)] = sim.ti
+                sim.diseases[self.disease].ti_since_untreated[ss.uids(uid)] = sim.ti
+                sim.diseases[self.disease].susceptible[ss.uids(uid)] = False
+                sim.diseases[self.disease].ti_infectious[ss.uids(uid)] = sim.ti + 14
 
                 # if self.stop_ART:
                 #    sim.diseases[self.disease].ti_stop_art[uid] = sim.ti + sim.diseases[self.disease].pars.avg_duration_stop_ART
 
-            if uid in sim.people.alive.uid:
+            if uid in sim.people.alive.uids:
                 # Check if it's time to restart ART treatment:
                 # if sim.diseases[self.disease].on_art[uid] and self.stop_ART and self.restart_ART and sim.ti == sim.diseases[self.disease].ti_stop_art[uid]:
                 #    sim.diseases[self.disease].schedule_ART_treatment(np.array([uid]), sim.ti + sim.diseases[self.disease].pars.avg_duration_restart_ART)
 
-                if sim.diseases[self.disease].on_art[uid]:
+                if sim.diseases[self.disease].on_art[ss.uids(uid)]:
                     ART_status = 'on_ART'
                 else:
                     ART_status = 'not_on_ART'
-                self.results['cd4_count_' + str(uid)][0] = sim.diseases[self.disease].cd4_start[uid]
-                self.results['cd4_count_' + str(uid)][sim.ti] = sim.diseases[self.disease].cd4[uid]
+                self.results['cd4_count_' + str(uid)][0] = sim.diseases[self.disease].cd4_start[ss.uids(uid)]
+                self.results['cd4_count_' + str(uid)][sim.ti] = sim.diseases[self.disease].cd4[ss.uids(uid)]
                 self.results['ART_status_' + str(uid)][sim.ti] = ART_status
                 self.results['status_' + str(uid)][sim.ti] = 'alive'
-                self.results['transmission_' + str(uid)][sim.ti] = sim.diseases[self.disease].rel_trans[uid]
+                self.results['transmission_' + str(uid)][sim.ti] = sim.diseases[self.disease].rel_trans[ss.uids(uid)]
 
             else:
                 self.results['cd4_count_' + str(uid)][sim.ti] = np.nan

@@ -112,8 +112,6 @@ def plot_hiv(sim_output):
 
     ax[1, 0].plot(sim_output.index, sim_output['deaths.new'])
     ax[1, 0].set_title('New Deaths')
-    # ax[1, 1].plot(sim_output.index, sim_output['deaths.cumulative'])
-    # ax[1, 1].set_title('Cumulative Deaths')
     ax[1, 1].plot(sim_output.index, sim_output['hiv.new_deaths'])
     ax[1, 1].set_title('HIV Deaths')
 
@@ -121,13 +119,19 @@ def plot_hiv(sim_output):
     ax[2, 0].set_title('HIV prevalence')
     ax[2, 0].plot(sim_output.index, sim_output['hiv.prevalence_sw'], label='FSW')
     ax[2, 0].plot(sim_output.index, sim_output['hiv.prevalence_client'], label='Client')
-    ax[2, 0].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_0'], label='Risk Group 0')
-    ax[2, 0].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_1'], label='Risk Group 1')
-    ax[2, 0].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_2'], label='Risk Group 2')
     ax[2, 0].legend()
 
+    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_0.0_f'], label='Risk Group 0 - Female')
+    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_1.0_f'], label='Risk Group 1- Female')
+    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_2.0_f'], label='Risk Group 2- Female')
+    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_0.0_m'], label='Risk Group 0 - Male')
+    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_1.0_m'], label='Risk Group 1- Male')
+    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_2.0_m'], label='Risk Group 2- Male')
+    ax[2, 1].legend()
+    ax[2, 1].set_title('HIV prevalence by Risk Group and gender')
+
     ax[3, 0].plot(sim_output.index, sim_output['hiv.n_on_art'] / sim_output['hiv.n_diagnosed'], label='Modelled')
-    ax[3, 0].set_title('ART coverage')
+    ax[3, 0].set_title('ART coverage (%)')
     ax[3, 0].plot(ART_coverages_df["Years"], ART_coverages_df["Value"], label="Data")
     ax[3, 0].legend()
     # ax[3, 0].yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f'{x * 1e-6:0.1f}'))
@@ -176,7 +180,9 @@ def get_testing_products():
                     simple testing,infected,hiv,positive,1
                     simple testing,infected,hiv,negative,0
                     """), sep=",")
-    simple_test = Dx(df=testing_data)
+    simple_test_1 = Dx(df=testing_data, name='1') # This feels super dodgy
+    simple_test_2 = Dx(df=testing_data, name='2')
+    simple_test_3 = Dx(df=testing_data, name='3')
 
     ####################################################################################################################
     # FSW Testing
@@ -184,7 +190,8 @@ def get_testing_products():
 
     FSW_eligible = lambda sim: sim.networks.structuredsexual.fsw & (np.isnan(sim.get_intervention('fsw_testing').ti_screened) | (sim.ti > (sim.get_intervention('fsw_testing').ti_screened + 12)))
     FSW_testing = BaseTest(prob=FSW_prop,
-                           product=simple_test,
+                           name='fsw_testing',
+                           product=simple_test_1,
                            eligibility=FSW_eligible,
                            label='fsw_testing',
                            disease='hiv')
@@ -195,7 +202,8 @@ def get_testing_products():
 
     other_eligible = lambda sim: ~sim.networks.structuredsexual.fsw & (np.isnan(sim.get_intervention('other_testing').ti_screened) | (sim.ti > (sim.get_intervention('other_testing').ti_screened + 12)))
     other_testing = BaseTest(prob=other_prop,
-                             product=simple_test,
+                             name='other_testing',
+                             product=simple_test_2,
                              eligibility=other_eligible,
                              label='other_testing',
                              disease='hiv')
@@ -207,7 +215,8 @@ def get_testing_products():
     # Agents are eligible for testing  if cd4 count is below 50 and they previously haven't been diagnosed
     low_cd4_eligibe = lambda sim: (sim.diseases['hiv'].cd4 < 50) & (sim.diseases['hiv'].diagnosed == False)
     low_cd4_testing = BaseTest(prob=0.9,
-                               product=simple_test,
+                               name='low_cd4_testing',
+                               product=simple_test_3,
                                eligibility=low_cd4_eligibe,
                                label='low_cd4_testing',
                                disease='hiv')
@@ -278,19 +287,18 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
         start=1990,
         n_years=40,
         people=ppl,
-        remove_dead=1,  # How many timesteps to go between removing dead agents (0 to not remove)
+        #remove_dead=1,  # How many timesteps to go between removing dead agents (0 to not remove)
         diseases=hiv,
         networks=ss.ndict(sexual, maternal),
         interventions=[fsw_testing,
                        other_testing,
                        low_cd4_testing,
                        ART(ART_coverages_df=ART_coverages_df,
-                           duration_on_ART=ss.normal(loc=18, scale=5),
-                           # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
+                           duration_on_ART=ss.normal(loc=18, scale=5), # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
                            art_efficacy=0.96),
                        validate_ART(disease='hiv',
                                     uids=save_agents,
-                                    infect_uids_t=np.repeat(100, len(save_agents)),
+                                    infect_uids_t=np.repeat(0, len(save_agents)),
                                     stop_ART=True,
                                     restart_ART=True)],
         demographics=[pregnancy, death])

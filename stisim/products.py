@@ -60,7 +60,7 @@ class Dx(ss.Product):
         for disease in self.diseases:
             for state in self.health_states:
                 this_state = getattr(sim.diseases[disease], state)
-                these_uids = ss.true(this_state[uids])  # Indices of agents in this state and eligible for testing
+                these_uids = uids[this_state[uids]]  # Uids of agents in this state and eligible for testing
 
                 # Filter the dataframe to extract test results for people in this state
                 df_filter = (self.df.state == state) & (self.df.disease == disease)

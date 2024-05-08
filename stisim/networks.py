@@ -20,7 +20,7 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
     """
 
     def __init__(self, pars=None, par_dists=None, key_dict=None, **kwargs):
-        pars = ss.omergeleft(
+        pars = ss.dictmergeleft(
             pars,
 
             # Settings - generally shouldn't be adjusted
@@ -86,13 +86,13 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
             dur_casual=ss.normal(loc=self.casual_loc, scale=self.casual_scale),
         )
 
-        par_dists = ss.omergeleft(
+        par_dists = ss.dictmerge(
             par_dists,
             fsw_shares=ss.bernoulli,
             client_shares=ss.bernoulli,
         )
 
-        key_dict = ss.omerge({
+        key_dict = ss.dictmerge({
             'sw': bool,
             'age_p1': float,
             'age_p2': float,
@@ -104,14 +104,14 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
         self.par_dists = par_dists
 
         # Add states
-        self.risk_group = ss.State('risk_group', int, default=0)
-        self.fsw = ss.State('fsw', bool, default=False)
-        self.client = ss.State('client', bool, default=False)
-        self.debut = ss.State('debut', float, default=0)
-        self.participant = ss.State('participant', bool, default=True)
-        self.concurrency = ss.State('concurrency', int, default=1)
-        self.partners = ss.State('partners', int, default=0)
-        self.lifetime_partners = ss.State('lifetime_partners', int, default=0)
+        self.risk_group = ss.FloatArr('risk_group', default=0)
+        self.fsw = ss.BoolArr('fsw', default=False)
+        self.client = ss.BoolArr('client', default=False)
+        self.debut = ss.FloatArr('debut', default=0)
+        self.participant = ss.BoolArr('participant', default=True)
+        self.concurrency = ss.FloatArr('concurrency', default=1)
+        self.partners = ss.FloatArr('partners', default=0)
+        self.lifetime_partners = ss.FloatArr('lifetime_partners', default=0)
 
         return
 
@@ -124,7 +124,7 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
             for rg in range(module.pars.n_risk_groups):
                 age_conds = (sim.people.age[uids] >= a_range[0]) & (sim.people.age[uids] < a_range[1])
                 f_el_bools = age_conds & (module.risk_group[uids] == rg) & sim.people.female[uids]
-                f_el_uids = ss.true(f_el_bools)
+                f_el_uids = ss.uids(f_el_bools)
                 loc[f_el_uids] = module.pars[par][a_label][rg][0]
                 scale[f_el_uids] = module.pars[par][a_label][rg][1]
         return loc, scale
@@ -229,7 +229,7 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
         underpartnered = self.partners < self.concurrency
         f_eligible = f_active & underpartnered
         m_eligible = m_active & underpartnered
-        f_looking = self.pars.p_pair_form.filter(ss.true(f_eligible))  # To do: let p vary by age and with dt
+        f_looking = self.pars.p_pair_form.filter(f_eligible.uids)  # To do: let p vary by age and with dt
 
         # Get mean age differences and desired ages
         age_gaps = self.pars.age_diffs.rvs(f_looking)   # Sample the age differences
@@ -237,18 +237,18 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
 
         # Sort the females according to the desired age of their partners
         desired_age_idx = np.argsort(desired_ages)  # Array positions for sorting the desired ages
-        p2 = desired_ages.uid[desired_age_idx]      # Female UIDs sorted by age of their desired partner
-        sorted_desired_ages = desired_ages[p2]      # Sorted desired ages
+        p2 = f_looking[desired_age_idx]      # Female UIDs sorted by age of their desired partner
+        sorted_desired_ages = desired_ages[desired_age_idx]      # Sorted desired ages
 
         # Sort the males by age
         m_ages = ppl.age[m_eligible]            # Ages of eligible males
         m_age_sidx = np.argsort(m_ages)         # Array positions for sorting the ages of males
-        sorted_m_uids = m_ages.uid[m_age_sidx]  # Male UIDs sorted by age
-        sorted_m_ages = m_ages[sorted_m_uids]   # Sort male ages
+        sorted_m_uids = m_eligible.uids[m_age_sidx]  # Male UIDs sorted by age
+        sorted_m_ages = m_ages[m_age_sidx]   # Sort male ages
 
         # Get matches
         try:
-            match_inds = abs(sorted_desired_ages.values[:, None] - sorted_m_ages.values[None, :]).argmin(axis=-1)
+            match_inds = abs(sorted_desired_ages[:, None] - sorted_m_ages[None, :]).argmin(axis=-1)
         except:
             import traceback; traceback.print_exc(); import pdb; pdb.set_trace()
         p1 = sorted_m_uids[match_inds]
@@ -269,15 +269,15 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
         dur = pd.Series(ppl.dt, index=p2)  # Default duration is dt, replaced for stable matches
         acts = (self.pars.acts.rvs(p2) * ppl.dt).astype(int)  # Number of acts does not depend on commitment/risk group
         sw = np.full_like(p1, False, dtype=bool)
-        age_p1 = ppl.age[p1].values
-        age_p2 = ppl.age[p2].values
+        age_p1 = ppl.age[p1]
+        age_p2 = ppl.age[p2]
 
         # If both partners are in the same risk group, determine the probability they'll commit
         for rg in range(self.pars.n_risk_groups):
             matched_risk = (self.risk_group[p1] == rg) & (self.risk_group[p2] == rg)
 
             # If there are any matched pairs, check if they commit
-            if len(ss.true(matched_risk)) > 0:
+            if sum(matched_risk) > 0:
 
                 matched_p2 = p2[matched_risk]
                 stable_dist = self.pars[f'p_stable{rg}']   # To do: let p vary by age
@@ -313,16 +313,16 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
 
         # Find clients who will seek FSW
         self.pars.sw_seeking_dist.pars.p = self.pars.sw_seeking_rate * ppl.dt
-        m_looking = self.pars.sw_seeking_dist.filter(ss.true(active_clients))
+        m_looking = self.pars.sw_seeking_dist.filter(active_clients.uids)
 
         # Replace this with choice
-        if len(m_looking) > len(ss.true(active_fsw)):  # Replace this - should assign an FSW to all potential clients
-            n_pairs = len(ss.true(active_fsw))
-            p2 = ss.true(active_fsw)
+        if len(m_looking) > len(active_fsw.uids):  # Replace this - should assign an FSW to all potential clients
+            n_pairs = len(active_fsw.uids)
+            p2 = active_fsw.uids
             p1 = m_looking[:n_pairs]
         else:
             n_pairs = len(m_looking)
-            p2 = ss.true(active_fsw)[:n_pairs]
+            p2 = active_fsw.uids[:n_pairs]
             p1 = m_looking
 
         # Beta, acts, duration
@@ -334,25 +334,25 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
         self.lifetime_partners[p1] += 1
         self.lifetime_partners[p2] += 1
 
-        return p1, p2, beta, dur, acts, sw, ppl.age[p1].values, ppl.age[p2].values
+        return p1, p2, beta, dur, acts, sw, ppl.age[p1], ppl.age[p2]
 
     def end_pairs(self, people):
         dt = people.dt
         self.contacts.dur = self.contacts.dur - dt
 
         # Non-alive agents are removed
-        alive_bools = people.alive[self.contacts.p1] & people.alive[self.contacts.p2]
+        alive_bools = people.alive[ss.uids(self.contacts.p1)] & people.alive[ss.uids(self.contacts.p2)]
         active = (self.contacts.dur > 0) & alive_bools
 
         # For gen pop contacts that are due to expire, decrement the partner count
         inactive_gp = ~active & (~self.contacts.sw)
-        self.partners[self.contacts.p1[inactive_gp]] -= 1
-        self.partners[self.contacts.p2[inactive_gp]] -= 1
+        self.partners[ss.uids(self.contacts.p1[inactive_gp])] -= 1
+        self.partners[ss.uids(self.contacts.p2[inactive_gp])] -= 1
 
         # For all contacts that are due to expire, remove them from the contacts list
         if len(active) > 0:
             for k in self.meta_keys():
-                self.contacts[k] = self.contacts[k][active]
+                self.contacts[k] = (self.contacts[k][active])
 
         return
 
