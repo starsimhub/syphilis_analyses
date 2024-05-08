@@ -166,7 +166,6 @@ HIV_output_starsim.csv
 sim_zimbabwe.obj
 viral_histories.csv
 .idea/.gitignore
-data/zimbabwe_20230725.xlsx
 figures/hiv_plots.png
 figures/networks.png
 figures/partner_degree.png
