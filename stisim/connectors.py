@@ -2,19 +2,17 @@
 Syphilis-HIV connector for running coinfection analyses
 """
 
-import numpy as np
-import sciris as sc
 import starsim as ss
 from stisim.diseases.syphilis import Syphilis
 from stisim.diseases.hiv import HIV
 
-__all__ = ['HIVSyph']
+__all__ = ['hiv_syph']
 
 
 class hiv_syph(ss.Connector):
 
     def __init__(self, pars=None, **kwargs):
-        super().__init__(label='HIV-Syphilis', requires=[ss.HIV, ss.Syphilis])
+        super().__init__(label='HIV-Syphilis', requires=[HIV, Syphilis])
         self.default_pars(
             rel_sus_syph_hiv=2,         # People with HIV are 2x more likely to acquire syphilis
             rel_sus_syph_aids=5,        # People with AIDS are 5x more likely to acquire syphilis
@@ -45,4 +43,3 @@ class hiv_syph(ss.Connector):
 
         return
 
-        
