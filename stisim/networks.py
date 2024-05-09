@@ -295,8 +295,8 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
         # Get sex work values
         p1_sw, p2_sw, beta_sw, dur_sw, acts_sw, sw_sw, age_p1_sw, age_p2_sw = self.add_sex_work(ppl)
 
-        self.contacts.p1 = np.concatenate([self.contacts.p1, p1, p1_sw])
-        self.contacts.p2 = np.concatenate([self.contacts.p2, p2, p2_sw])
+        self.contacts.p1 = ss.uids(np.concatenate([self.contacts.p1, p1, p1_sw]))
+        self.contacts.p2 = ss.uids(np.concatenate([self.contacts.p2, p2, p2_sw]))
         self.contacts.beta = np.concatenate([self.contacts.beta, beta.values, beta_sw.values])
         self.contacts.dur = np.concatenate([self.contacts.dur, dur.values, dur_sw.values])
         self.contacts.acts = np.concatenate([self.contacts.acts, acts, acts_sw])
