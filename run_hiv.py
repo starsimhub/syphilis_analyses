@@ -200,18 +200,24 @@ def plot_hiv(sim_output):
 
 def get_testing_products():
     # Load HIV test data:
-    HIV_tests_data_raw = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Testing & treatment',
-                                       skiprows=1).iloc[0:15, 1:43]
+    hiv_testing_data = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Testing & treatment',
+                                       skiprows=1)
+    HIV_tests_data_raw = hiv_testing_data.iloc[0:15, 1:43]
+    HIV_low_cd4count_data_raw = hiv_testing_data.iloc[21:22, 1:43]
+    HIV_low_cd4count_data_raw = HIV_low_cd4count_data_raw.iloc[:, 1:]
     HIV_tests_data_raw.index = HIV_tests_data_raw.iloc[:, 0]
     HIV_tests_data_raw = HIV_tests_data_raw.iloc[:, 1:]
     HIV_tests_data_raw.loc["Other_avg"] = HIV_tests_data_raw[HIV_tests_data_raw.index != "FSW"].mean()
     tivec = np.arange(start=1990, stop=2020 + 1, step=1)
     FSW_prop = np.interp(tivec,
                          HIV_tests_data_raw.loc["FSW"].index[~pd.isna(HIV_tests_data_raw.loc["FSW"].values)].astype(int),
-                         HIV_tests_data_raw.loc["FSW"].values[~pd.isna(HIV_tests_data_raw.loc["FSW"].values)]) / 12
+                         HIV_tests_data_raw.loc["FSW"].values[~pd.isna(HIV_tests_data_raw.loc["FSW"].values)])
     other_prop = np.interp(tivec,
                            HIV_tests_data_raw.loc["Other_avg"].index[~pd.isna(HIV_tests_data_raw.loc["Other_avg"].values)].astype(int),
-                           HIV_tests_data_raw.loc["Other_avg"].values[~pd.isna(HIV_tests_data_raw.loc["Other_avg"].values)]) / 12
+                           HIV_tests_data_raw.loc["Other_avg"].values[~pd.isna(HIV_tests_data_raw.loc["Other_avg"].values)])
+    low_cd4count_prop = np.interp(tivec,
+                                  HIV_low_cd4count_data_raw.iloc[0].index[~pd.isna(HIV_low_cd4count_data_raw.iloc[0].values)].astype(int),
+                                  HIV_low_cd4count_data_raw.iloc[0].values[~pd.isna(HIV_low_cd4count_data_raw.iloc[0].values)])
 
     ####################################################################################################################
     # Product
