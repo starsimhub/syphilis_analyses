@@ -15,6 +15,8 @@ from stisim.products import Dx
 from stisim.diseases.hiv import HIV
 from stisim.interventions import ART, HIV_testing, validate_ART, BaseTest
 from matplotlib.ticker import FuncFormatter
+import matplotlib.patches as mpatches
+from matplotlib.lines import Line2D
 
 quick_run = False
 ss.options['multirng'] = False
@@ -94,41 +96,64 @@ def plot_hiv(sim_output):
     - n on ART
     """
 
-    ART_coverages_raw = pd.read_csv(f'data/world_bank_art_coverages.csv', skiprows=4).set_index('Country Name').loc[
-                            location.capitalize()].dropna()[3:]
-    tivec = np.arange(start=1990, stop=2021 + 1 / 12, step=1 / 12)
-    ART_coverages_df = pd.DataFrame({"Years": tivec,
-                                     "Value": (np.interp(tivec,
-                                                         ART_coverages_raw.index.astype(int).tolist(),
-                                                         (ART_coverages_raw.values / 100).tolist()))})
-
     fig, ax = plt.subplots(6, 2, figsize=(20, 15))
 
-    # sim_output = sim_output.iloc[1:]
-    ax[0, 0].plot(sim_output.index, sim_output['hiv.new_infections'])
-    ax[0, 0].set_title('New infections')
+    #####################################################################################################################
+    # New Infections and Cumulative Infections
+    #####################################################################################################################
+    ax[0, 0].plot(sim_output.index, sim_output['hiv.n_infected'])
+    ax[0, 0].set_title('n infected')
+    ax[0, 0].set_ylabel('Mio.')
+    ax[0, 0].yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f'{x * 1e-6:0.1f}'))
     ax[0, 1].plot(sim_output.index, sim_output['hiv.cum_infections'])
     ax[0, 1].set_title('Cumulative infections')
 
+    #####################################################################################################################
+    # New Deaths and HIV Deaths
+    #####################################################################################################################
     ax[1, 0].plot(sim_output.index, sim_output['deaths.new'])
     ax[1, 0].set_title('New Deaths')
     ax[1, 1].plot(sim_output.index, sim_output['hiv.new_deaths'])
     ax[1, 1].set_title('HIV Deaths')
 
+    #####################################################################################################################
+    # HIV Prevalence
+    #####################################################################################################################
     ax[2, 0].plot(sim_output.index, sim_output['hiv.prevalence'], label='General Population')
     ax[2, 0].set_title('HIV prevalence')
     ax[2, 0].plot(sim_output.index, sim_output['hiv.prevalence_sw'], label='FSW')
     ax[2, 0].plot(sim_output.index, sim_output['hiv.prevalence_client'], label='Client')
     ax[2, 0].legend()
 
-    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_0.0_f'], label='Risk Group 0 - Female')
-    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_1.0_f'], label='Risk Group 1- Female')
-    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_2.0_f'], label='Risk Group 2- Female')
-    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_0.0_m'], label='Risk Group 0 - Male')
-    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_1.0_m'], label='Risk Group 1- Male')
-    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_2.0_m'], label='Risk Group 2- Male')
-    ax[2, 1].legend()
+    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_0.0_f'], color='tab:blue', label='Risk Group 0 - Female')
+    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_1.0_f'], color='tab:green', label='Risk Group 1- Female')
+    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_2.0_f'], color='tab:orange', label='Risk Group 2- Female')
+    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_0.0_m'], color='tab:blue', linestyle='--', label='Risk Group 0 - Male')
+    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_1.0_m'], color='tab:green', linestyle='--', label='Risk Group 1- Male')
+    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_2.0_m'],  color='tab:orange', linestyle='--', label='Risk Group 2- Male')
+    blue_patch = mpatches.Patch(color='tab:blue', label='Risk Group 0')
+    green_patch = mpatches.Patch(color='tab:green', label='Risk Group 1')
+    orange_patch = mpatches.Patch(color='tab:orange', label='Risk Group 2')
+    females = Line2D([0], [0], label='females', color='k', linestyle='-')
+    males = Line2D([0], [0], label='males', color='k', linestyle='--')
+    ax[2, 1].legend(handles=[blue_patch, green_patch, orange_patch, females, males])
     ax[2, 1].set_title('HIV prevalence by Risk Group and gender')
+
+    #####################################################################################################################
+    # ART Coverage
+    #####################################################################################################################
+    ART_coverages_raw = pd.read_csv(f'data/world_bank_art_coverages.csv', skiprows=4).set_index('Country Name').loc[location.capitalize()].dropna()[3:]
+    tivec = np.arange(start=1990, stop=2021 + 1 / 12, step=1 / 12)
+    ART_coverages_df = pd.DataFrame({"Years": tivec,
+                                     "Value": (np.interp(tivec,
+                                                         ART_coverages_raw.index.astype(int).tolist(),
+                                                         (ART_coverages_raw.values / 100).tolist()))})
+    ART_coverages_raw = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Testing & treatment', skiprows=28).iloc[0:1, 2:43]
+    pop_scale = total_pop / int(10e3)
+    ART_coverages_df_numbers = pd.DataFrame({"Years": tivec,
+                                     "Value": (np.interp(tivec,
+                                                         ART_coverages_raw.columns.values[~pd.isna(ART_coverages_raw.values)[0]].astype(int),
+                                                         ART_coverages_raw.values[~pd.isna(ART_coverages_raw.values)]) / pop_scale).astype(int)})
 
     ax[3, 0].plot(sim_output.index, sim_output['hiv.n_on_art'] / sim_output['hiv.n_diagnosed'], label='Modelled')
     ax[3, 0].set_title('ART coverage (%)')
@@ -137,15 +162,36 @@ def plot_hiv(sim_output):
     # ax[3, 0].yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f'{x * 1e-6:0.1f}'))
     ax[3, 0].set_xlim([2000.0, max(sim_output.iloc[1:].index)])
 
-    ax[4, 0].plot(sim_output.iloc[1:].index, sim_output.iloc[1:]['hiv.new_diagnoses'])
+    ax[3, 1].plot(sim_output.index, sim_output['hiv.n_on_art'], label='Modelled')
+    ax[3, 1].set_title('Number of people on ART (in Mio)')
+    ax[3, 1].plot(ART_coverages_df_numbers["Years"], ART_coverages_df_numbers["Value"] * pop_scale, label="Data")
+    ax[3, 1].legend()
+    ax[3, 1].set_ylabel('Mio.')
+    ax[3, 1].yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f'{x * 1e-6:0.1f}'))
+    ax[3, 1].set_xlim([2000.0, max(sim_output.iloc[1:].index)])
+
+    #####################################################################################################################
+    # New Diagnosed and Cumulative Diagnoses
+    #####################################################################################################################
+    ax[4, 0].plot(sim_output.index, sim_output['hiv.new_diagnoses'])
     ax[4, 0].set_title('New Diagnoses')
     ax[4, 1].plot(sim_output.index, sim_output['hiv.cum_diagnoses'])
     ax[4, 1].set_title('Cumulative Diagnoses')
+    ax[4, 1].set_ylabel('Mio.')
+    ax[4, 1].yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f'{x * 1e-6:0.1f}'))
 
-    ax[5, 0].plot(sim_output.iloc[1:].index, sim_output.iloc[1:]['n_alive'])
-    ax[5, 0].set_title('Population')
+    ax[5, 0].plot(sim_output.index, sim_output['hiv.n_diagnosed'])
+    ax[5, 0].set_title('n diagnosed')
     ax[5, 0].yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f'{x * 1e-6:0.1f}'))
     ax[5, 0].set_ylabel('Mio.')
+
+    #####################################################################################################################
+    # Population
+    #####################################################################################################################
+    ax[5, 1].plot(sim_output.index, sim_output['n_alive'])
+    ax[5, 1].set_title('Population')
+    ax[5, 1].yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f'{x * 1e-6:0.1f}'))
+    ax[5, 1].set_ylabel('Mio.')
 
     fig.tight_layout()
     # plt.show()
@@ -161,14 +207,11 @@ def get_testing_products():
     HIV_tests_data_raw.loc["Other_avg"] = HIV_tests_data_raw[HIV_tests_data_raw.index != "FSW"].mean()
     tivec = np.arange(start=1990, stop=2020 + 1, step=1)
     FSW_prop = np.interp(tivec,
-                         HIV_tests_data_raw.loc["FSW"].index[~pd.isna(HIV_tests_data_raw.loc["FSW"].values)].astype(
-                             int),
-                         HIV_tests_data_raw.loc["FSW"].values[~pd.isna(HIV_tests_data_raw.loc["FSW"].values)])
+                         HIV_tests_data_raw.loc["FSW"].index[~pd.isna(HIV_tests_data_raw.loc["FSW"].values)].astype(int),
+                         HIV_tests_data_raw.loc["FSW"].values[~pd.isna(HIV_tests_data_raw.loc["FSW"].values)]) / 12
     other_prop = np.interp(tivec,
-                           HIV_tests_data_raw.loc["Other_avg"].index[
-                               ~pd.isna(HIV_tests_data_raw.loc["Other_avg"].values)].astype(int),
-                           HIV_tests_data_raw.loc["Other_avg"].values[
-                               ~pd.isna(HIV_tests_data_raw.loc["Other_avg"].values)])
+                           HIV_tests_data_raw.loc["Other_avg"].index[~pd.isna(HIV_tests_data_raw.loc["Other_avg"].values)].astype(int),
+                           HIV_tests_data_raw.loc["Other_avg"].values[~pd.isna(HIV_tests_data_raw.loc["Other_avg"].values)]) / 12
 
     ####################################################################################################################
     # Product
@@ -187,8 +230,10 @@ def get_testing_products():
     ####################################################################################################################
     # FSW Testing
     ####################################################################################################################
+    # Eligible for testing are FSW agents, who haven't been diagnosed yet and haven't been screened yet or last screening was 12months ago.
 
-    FSW_eligible = lambda sim: sim.networks.structuredsexual.fsw & (np.isnan(sim.get_intervention('fsw_testing').ti_screened) | (sim.ti > (sim.get_intervention('fsw_testing').ti_screened + 12)))
+    FSW_eligible = lambda sim: sim.networks.structuredsexual.fsw & (sim.diseases['hiv'].diagnosed == False) & \
+                            (np.isnan(sim.get_intervention('fsw_testing').ti_screened) | (sim.ti > (sim.get_intervention('fsw_testing').ti_screened + 12)))
     FSW_testing = BaseTest(prob=FSW_prop,
                            name='fsw_testing',
                            product=simple_test_1,
@@ -200,7 +245,9 @@ def get_testing_products():
     # Remaining population testing
     ####################################################################################################################
 
-    other_eligible = lambda sim: ~sim.networks.structuredsexual.fsw & (np.isnan(sim.get_intervention('other_testing').ti_screened) | (sim.ti > (sim.get_intervention('other_testing').ti_screened + 12)))
+    # Eligible for testing are non-FSW agents, who haven't been diagnosed yet and haven't been screened yet or last screening was 12months ago.
+    other_eligible = lambda sim: ~sim.networks.structuredsexual.fsw & (sim.diseases['hiv'].diagnosed == False) & \
+                                 (np.isnan(sim.get_intervention('other_testing').ti_screened) | (sim.ti > (sim.get_intervention('other_testing').ti_screened + 12)))
     other_testing = BaseTest(prob=other_prop,
                              name='other_testing',
                              product=simple_test_2,
@@ -211,10 +258,10 @@ def get_testing_products():
     ####################################################################################################################
     # CD4 count < 50 testing
     ####################################################################################################################
+    # Eligible for testing are agents, who haven't been diagnosed yet and whose CD4 count is below 50.
 
-    # Agents are eligible for testing  if cd4 count is below 50 and they previously haven't been diagnosed
     low_cd4_eligibe = lambda sim: (sim.diseases['hiv'].cd4 < 50) & (sim.diseases['hiv'].diagnosed == False)
-    low_cd4_testing = BaseTest(prob=0.9,
+    low_cd4_testing = BaseTest(prob=0.9, # Assume high testing probability
                                name='low_cd4_testing',
                                product=simple_test_3,
                                eligibility=low_cd4_eligibe,
@@ -247,13 +294,13 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
     # HIV_prev_raw.columns = np.arange(2000, 2016+1).astype(str)
     # pop_sizes_raw = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Population size', skiprows=72).iloc[0:1, 13:30]
     # pop_sizes_raw.columns = np.arange(2000, 2016+1).astype(str)
-    ART_coverages_raw = pd.read_csv(f'data/world_bank_art_coverages.csv', skiprows=4).set_index('Country Name').loc[
-                            location.capitalize()].dropna()[3:]
+    ART_coverages_raw = pd.read_csv(f'data/world_bank_art_coverages.csv', skiprows=4).set_index('Country Name').loc[location.capitalize()].dropna()[3:]
     tivec = np.arange(start=1990, stop=2021 + 1 / 12, step=1 / 12)
     ART_coverages_df = pd.DataFrame({"Years": tivec,
                                      "Value": (np.interp(tivec,
                                                          ART_coverages_raw.index.astype(int).tolist(),
                                                          (ART_coverages_raw.values / 100).tolist()))})
+
     hiv.pars['ART_coverages_df'] = ART_coverages_df
 
     ####################################################################################################################
@@ -331,9 +378,9 @@ if __name__ == '__main__':
     output.to_csv("HIV_output.csv")
 
     # Call method in validate_ART intervention:
-    # sim.get_interventions(validate_ART)[0].save_viral_histories(sim)
-    # viral_histories = pd.read_csv("viral_histories.csv", index_col=0)
-    # plot_viral_dynamics(viral_histories, save_agents)
+    sim.get_interventions(validate_ART)[0].save_viral_histories(sim)
+    viral_histories = pd.read_csv("viral_histories.csv", index_col=0)
+    plot_viral_dynamics(viral_histories, save_agents)
 
     plot_hiv(output)
 
