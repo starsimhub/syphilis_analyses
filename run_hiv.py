@@ -229,9 +229,7 @@ def get_testing_products():
                     simple testing,infected,hiv,positive,1
                     simple testing,infected,hiv,negative,0
                     """), sep=",")
-    simple_test_1 = Dx(df=testing_data, name='1') # This feels super dodgy
-    simple_test_2 = Dx(df=testing_data, name='2')
-    simple_test_3 = Dx(df=testing_data, name='3')
+    simple_test = Dx(df=testing_data, name='simple_test')
 
     ####################################################################################################################
     # FSW Testing
@@ -240,9 +238,9 @@ def get_testing_products():
 
     FSW_eligible = lambda sim: sim.networks.structuredsexual.fsw & (sim.diseases['hiv'].diagnosed == False) & \
                             (np.isnan(sim.get_intervention('fsw_testing').ti_screened) | (sim.ti > (sim.get_intervention('fsw_testing').ti_screened + 12)))
-    FSW_testing = BaseTest(prob=FSW_prop,
+    FSW_testing = BaseTest(prob=FSW_prop/12,
                            name='fsw_testing',
-                           product=simple_test_1,
+                           product=simple_test,
                            eligibility=FSW_eligible,
                            label='fsw_testing',
                            disease='hiv')
@@ -254,9 +252,9 @@ def get_testing_products():
     # Eligible for testing are non-FSW agents, who haven't been diagnosed yet and haven't been screened yet or last screening was 12months ago.
     other_eligible = lambda sim: ~sim.networks.structuredsexual.fsw & (sim.diseases['hiv'].diagnosed == False) & \
                                  (np.isnan(sim.get_intervention('other_testing').ti_screened) | (sim.ti > (sim.get_intervention('other_testing').ti_screened + 12)))
-    other_testing = BaseTest(prob=other_prop,
+    other_testing = BaseTest(prob=other_prop/12,
                              name='other_testing',
-                             product=simple_test_2,
+                             product=simple_test,
                              eligibility=other_eligible,
                              label='other_testing',
                              disease='hiv')
@@ -266,10 +264,10 @@ def get_testing_products():
     ####################################################################################################################
     # Eligible for testing are agents, who haven't been diagnosed yet and whose CD4 count is below 50.
 
-    low_cd4_eligibe = lambda sim: (sim.diseases['hiv'].cd4 < 50) & (sim.diseases['hiv'].diagnosed == False)
-    low_cd4_testing = BaseTest(prob=0.9, # Assume high testing probability
+    low_cd4_eligibe = lambda sim: (sim.diseases['hiv'].cd4 < 200) & (sim.diseases['hiv'].diagnosed == False)
+    low_cd4_testing = BaseTest(prob=low_cd4count_prop/12,
                                name='low_cd4_testing',
-                               product=simple_test_3,
+                               product=simple_test,
                                eligibility=low_cd4_eligibe,
                                label='low_cd4_testing',
                                disease='hiv')
@@ -287,7 +285,7 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
     ####################################################################################################################
     hiv = HIV()
     hiv.pars['beta'] = {'structuredsexual': [0.95, 0.95], 'maternal': [0.08, 0.5]}
-    hiv.pars['init_prev'] = ss.bernoulli(p=0.1)
+    hiv.pars['init_prev'] = ss.bernoulli(p=0.3)
     hiv.pars['cd4_start_mean'] = 800
     hiv.pars['primary_acute_inf_dur'] = 2.9  # in months
     hiv.pars['transmission_sd'] = 0.00  # Standard Deviation of normal distribution for transmission.
