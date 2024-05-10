@@ -18,20 +18,15 @@ class HIV(ss.Infection):
 
         self.add_states(
             ss.BoolArr('on_art'),
-            ss.FloatArr('art_transmission_reduction'),
+            ss.FloatArr('art_transmission_reduction'),  # Reduction in transmission dependent on initial cd4 count
             ss.FloatArr('ti_art'),
             ss.FloatArr('ti_stop_art'),
-            ss.FloatArr('cd4_start'),
-            ss.FloatArr('cd4'),  #
+            ss.FloatArr('cd4_start'),  # Initial cd4 count for each agent before an infection
+            ss.FloatArr('cd4'),  # Current CD4 count
             ss.FloatArr('ti_dead'),  # Time of HIV-cause death
             ss.BoolArr('diagnosed'),
-            ss.BoolArr('dead'),
-            ss.BoolArr('tested'),
-            ss.FloatArr('ti_tested'),
-            ss.FloatArr('ti_pos_test'),
             ss.FloatArr('ti_diagnosed'),
-            ss.FloatArr('ti_infectious'),
-            ss.FloatArr('ti_since_untreated')
+            ss.FloatArr('ti_since_untreated')  # This is needed for agents who start, stop and restart ART
         )
         # Default parameters
         pars = ss.dictmergeleft(pars,
@@ -40,21 +35,19 @@ class HIV(ss.Infection):
                                 cd4_max=500,
                                 cd4_rate=5,
                                 init_prev=0.03,
+                                init_diagnosed=ss.bernoulli(p=0.01),
                                 transmission_sd=0.025,
                                 primary_acute_inf_dur=1,  # in months
                                 art_efficacy=0.96,
-                                death_data=None,
                                 death_prob=0.05)
 
         par_dists = ss.dictmergeleft(par_dists,
-                                     death_prob=ss.bernoulli,
-                                     )
+                                     death_prob=ss.bernoulli)
 
         super().__init__(pars=pars, par_dists=par_dists, *args, **kwargs)
         self.death_prob_data = sc.dcp(self.pars.death_prob)
         self.pars.death_prob = self.make_death_prob
         self._pending_ARTtreatment = defaultdict(list)
-        # self.art_transmission_reduction = None
 
         return
 
@@ -71,11 +64,15 @@ class HIV(ss.Infection):
     def set_initial_states(self, sim):
         alive_uids = sim.people.alive.uids
         initial_cases = self.pars.init_prev.filter(alive_uids)
+        initial_cases_diagnosed = self.pars.init_diagnosed.filter(initial_cases)
         self.susceptible[initial_cases] = False
         self.infected[initial_cases] = True
+        self.diagnosed[initial_cases_diagnosed] = True
+
         # Assume initial cases were infected up to 10 years ago
         self.ti_infected[initial_cases] = ss.uniform(low=-10 * 12, high=0).initialize().rvs(len(initial_cases)).astype(int)
         self.ti_since_untreated[initial_cases] = self.ti_infected[initial_cases]
+
         # Update CD4 counts for initial cases
         self.pars.viral_timecourse, self.pars.cd4_timecourse = self.get_viral_dynamics_timecourses()
         duration_since_untreated = sim.ti - self.ti_since_untreated[initial_cases]
@@ -91,15 +88,14 @@ class HIV(ss.Infection):
 
     @staticmethod
     def make_death_prob(self, sim, uids):
-        # p = module.pars
-        # out = sim.dt * module.death_prob_data / (p.cd4_min - p.cd4_max) ** 2 * (module.cd4[uids] - p.cd4_max) ** 2
-        # out = np.array(out)
-        # TODO probably find a better place for this
-        death_data = [(range(500, 1000000), 0.0 / 12),
+        """
+        Death probabilities dependent on cd4 counts
+        """
+        death_data = [(range(500, int(np.ceil(np.max(self.cd4_start)))), 0.0 / 12),
                       (range(350, 500), 0.0 / 12),
                       (range(200, 350), 0.0 / 12),
                       (range(50, 200), 0.0 / 12),
-                      (range(0, 50), 0.323 / 12)]
+                      (range(0, 50), 0.3 / 12)]
         death_probs = [probs[1] for probs in death_data for cd4_count in self.cd4[uids] if int(cd4_count) in probs[0]]
         return death_probs
 
@@ -120,9 +116,17 @@ class HIV(ss.Infection):
         """
         Define viral dynamic time courses for viral load and CD4 counts
         """
-
+        # Viral load increases based on Figure 1B in https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6155466/
+        # TODO Currently not needed
         viral_load_timecourse_data = [(0, 0), (0.5, 1), (1, (10 ** 4.5) / 1e6), (4 * 12, (10 ** 4.5) / 1e6),
                                       (8 * 12, 1)]  # in months
+
+        # CD4 count decrease based on Figure 1A in https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6155466/
+        # Assumption
+        # 100% at month 0
+        # 60% at month 0.5
+        # 70% at months 1 - 12
+        # Linear decrease from 70% to 0 after 10 years
         cd4_timecourse_data = [(0, 1), (0.5, 600 / 1000), (1, 700 / 1000), (1 * 12, 700 / 1000),
                                (10 * 12, 0)]  # in months
 
@@ -145,13 +149,12 @@ class HIV(ss.Infection):
         values = ss.normal(loc=self.pars.cd4_start_mean, scale=1).initialize().rvs(len(uids))
         self.cd4_start.set(ss.uids(uids), values)
         self.cd4.set(ss.uids(uids), values)
-        #self.cd4_start.values[uids] = ss.normal(loc=self.pars.cd4_start_mean, scale=1).initialize().rvs(len(uids))
-        #self.cd4.values[uids] = self.cd4_start.values[uids]
 
         return
 
     def update_pre(self, sim):
         """
+        Carry out autonomous updates at the start of the timestep (prior to transmission)
         """
         # Update cd4 start for new agents:
         self.update_cd4_starts()
@@ -168,10 +171,6 @@ class HIV(ss.Infection):
 
         sim.people.request_death(hiv_deaths)
         self.ti_dead[hiv_deaths] = sim.ti
-
-        # Update today's diagnoses
-        # diagnosed = ss.true(self.ti_diagnosed == sim.ti-1) # TODO not needed anymore?
-        # self.diagnosed[diagnosed] = True
 
         return
 
@@ -217,7 +216,6 @@ class HIV(ss.Infection):
         duration_since_onART = np.minimum(duration_since_onART, 3 * 12)
         duration_since_onART_transmission = np.minimum(duration_since_onART, 6)
 
-        cd4_count_changes = np.diff(self.pars.cd4_timecourse)
         # Update transmission for agents not on ART with a cd4 count above 200:
         infected_uids_not_onART_cd4_above_200 = self.cd4[infected_uids_not_onART] >= 200
         infected_uids_not_onART_cd4_above_200_uids = infected_uids_not_onART.uids[infected_uids_not_onART_cd4_above_200]
@@ -228,13 +226,14 @@ class HIV(ss.Infection):
 
         # Update transmission for agents on ART
         # When agents start ART, determine the reduction of transmission (linearly decreasing over 6 months)
-        self.update_transmission_reduction(duration_since_onART_transmission, infected_uids_onART.uids)
+        self.get_transmission_reduction(duration_since_onART_transmission, infected_uids_onART.uids)
         transmission_onART = np.maximum(1 - self.pars.art_efficacy, self.rel_trans[infected_uids_onART] - self.art_transmission_reduction[infected_uids_onART])
         transmission_random_factor = ss.normal(loc=1, scale=self.pars.transmission_sd).initialize().rvs(len(transmission_onART))
         self.rel_trans[infected_uids_onART] = transmission_random_factor * transmission_onART
 
         # Overwrite transmission for agents whose CD4 counts are below 200:
         uids_below_200 = self.cd4 < 200
+        cd4_count_changes = np.diff(self.pars.cd4_timecourse)
         if len(uids_below_200.uids) > 0:
             ti_200_to_50 = (150 / (cd4_count_changes[-1] * self.cd4_start[uids_below_200]) * (-1)).astype(int)
             transmission_below_200 = np.minimum(self.rel_trans[uids_below_200] + (6 - 1) / ti_200_to_50, 6)
@@ -243,9 +242,10 @@ class HIV(ss.Infection):
 
         return
 
-    def update_transmission_reduction(self, durs_onART, uids_onART):
+    def get_transmission_reduction(self, durs_onART, uids_onART):
         """
-        Get transmission reductions (to decrease transmission linearly over 6 months)
+        Determine the reduction in transmission once an agent starts ART.
+        Transmission decreases linearly over 6 months and is dependent on the agent's current transmission.
         """
         start_onART_uids = uids_onART[(durs_onART == 1)]
         self.art_transmission_reduction[start_onART_uids] = (self.rel_trans[start_onART_uids] - (1 - self.pars.art_efficacy)) / 6
@@ -262,7 +262,6 @@ class HIV(ss.Infection):
         self.results += ss.Result(self.name, 'cum_diagnoses', sim.npts, dtype=int)
         self.results += ss.Result(self.name, 'new_agents_on_art', sim.npts, dtype=float)
         self.results += ss.Result(self.name, 'cum_agents_on_art', sim.npts, dtype=float)
-        self.results += ss.Result(self.name, 'n_agents_on_art', sim.npts, dtype=float)
         self.results += ss.Result(self.name, 'prevalence_sw', sim.npts, dtype=float)
         self.results += ss.Result(self.name, 'prevalence_client', sim.npts, dtype=float)
 
@@ -277,14 +276,16 @@ class HIV(ss.Infection):
         return
 
     def update_results(self, sim):
+        """
+        Update results at each time step
+        """
         super().update_results(sim)
         self.results['new_deaths'][sim.ti] = np.count_nonzero(self.ti_dead == sim.ti) * sim.pars["pop_scale"]
-        self.results['cum_deaths'][sim.ti] = np.sum(self.results['new_deaths'][:sim.ti])
+        self.results['cum_deaths'][sim.ti] = np.sum(self.results['new_deaths'][:sim.ti + 1])
         self.results['new_diagnoses'][sim.ti] = np.count_nonzero(self.ti_diagnosed == sim.ti) * sim.pars["pop_scale"]
-        self.results['cum_diagnoses'][sim.ti] = np.sum(self.results['new_diagnoses'][:sim.ti])
-        self.results['new_agents_on_art'][sim.ti] = np.count_nonzero(self.ti_art == sim.ti)
-        self.results['n_agents_on_art'][sim.ti] = len(self.on_art.uids)
-        self.results['cum_agents_on_art'][sim.ti] = np.sum(self.results['new_agents_on_art'][:sim.ti])
+        self.results['cum_diagnoses'][sim.ti] = np.sum(self.results['new_diagnoses'][:sim.ti + 1])
+        self.results['new_agents_on_art'][sim.ti] = np.count_nonzero(self.ti_art == sim.ti) * sim.pars["pop_scale"]
+        self.results['cum_agents_on_art'][sim.ti] = np.sum(self.results['new_agents_on_art'][:sim.ti + 1])
 
         # Subset by FSW and client:
         fsw_infected = self.infected[sim.networks.structuredsexual.fsw]
@@ -302,12 +303,17 @@ class HIV(ss.Infection):
         return
 
     def make_new_cases(self, sim):
+        """
+        Add new HIV cases
+        """
         # eff_condoms = sim.pars[self.name]['eff_condoms'] # TODO figure out how to add this
         super().make_new_cases(sim)
-
         return
 
     def set_prognoses(self, sim, uids, source_uids=None):
+        """
+        Set prognoses upon infection
+        """
         super().set_prognoses(sim, uids, source_uids)
 
         self.susceptible[uids] = False
@@ -319,15 +325,3 @@ class HIV(ss.Infection):
 
     def set_congenital(self, sim, target_uids, source_uids):
         return self.set_prognoses(sim, target_uids, source_uids)
-
-    def check_uids(self, current, date, t, filter_uids=None):
-        '''
-        Return indices for which the current state is false and which meet the date criterion
-        '''
-        if filter_uids is None:
-            not_current = ss.false(current)
-        else:
-            not_current = filter_uids[np.logical_not(current[filter_uids])]
-        has_date = not_current[~np.isnan(date[not_current])]
-        uids = has_date[t >= date[has_date]]
-        return uids
