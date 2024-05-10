@@ -77,7 +77,7 @@ class HIV(ss.Infection):
         self.pars.viral_timecourse, self.pars.cd4_timecourse = self.get_viral_dynamics_timecourses()
         duration_since_untreated = sim.ti - self.ti_since_untreated[initial_cases]
         duration_since_untreated = np.minimum(duration_since_untreated, len(self.pars.cd4_timecourse) - 1).astype(int)
-        self.cd4_start[initial_cases] = ss.normal(loc=self.pars.cd4_start_mean, scale=1).initialize().rvs(len(initial_cases))
+        self.cd4_start[initial_cases] = ss.normal(loc=self.pars.cd4_start_mean, scale=1).initialize().rvs(len(initial_cases)) #TODO update to positive normal distribution
         self.cd4[initial_cases] = self.cd4_start[initial_cases] * self.pars.cd4_timecourse[duration_since_untreated]
 
         return

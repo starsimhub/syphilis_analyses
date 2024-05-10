@@ -144,26 +144,36 @@ class BaseTest(ss.Intervention):
 
     def initialize(self, sim):
         ss.Intervention.initialize(self, sim)
+        self.init_results(sim)
         self.npts = sim.npts
         # self.n_products_used = ss.Result(name=f'Products administered by {self.label}', npts=sim.npts, scale=True)
         self.outcomes = {k: np.array([], dtype=np.int64) for k in self.product.hierarchy}
         return
 
+    def init_results(self, sim):
+        self.results += [
+            ss.Result(self.name, 'new_screened', sim.npts, dtype=float, scale=True),
+            ss.Result(self.name, 'new_screens', sim.npts, dtype=int, scale=True)]
+
+        return
+
     def apply(self, sim):
         self.outcomes = {k: np.array([], dtype=np.int64) for k in self.product.hierarchy}
         accept_inds = self.deliver(sim)
+
+        # Store results
+        idx = sim.ti
+        new_screen_inds = accept_inds[self.screened[accept_inds]]  # Figure out people who are getting screened for the first time
+        n_new_people = sim.people.scale_flows(new_screen_inds)  # Scale
+        n_new_screens = sim.people.scale_flows(accept_inds)  # Scale
+        self.results['new_screened'][idx] += n_new_people
+        self.results['new_screens'][idx] += n_new_screens
+
+        # Update states
         self.screened[accept_inds] = True
         sim.diseases[self.disease].diagnosed[self.outcomes['positive']] = True
         self.ti_screened[accept_inds] = sim.ti
         sim.diseases[self.disease].ti_diagnosed[self.outcomes['positive']] = sim.ti
-
-        # Store results
-        idx = sim.ti  # int(sim.t / sim.resfreq)
-        # new_test_inds = accept_inds[np.logical_not(sim.diseases[self.disease].diagnosed[self.outcomes['positive']])]  # Figure out people who are getting screened for the first time
-        # n_new_people = sim.people.scale_flows(new_test_inds)  # Scale
-        # n_new_tests = sim.people.scale_flows(accept_inds)  # Scale
-        # sim.results['new_tested'][idx] += n_new_people
-        # sim.results['new_tests'][idx] += n_new_tests
 
         return accept_inds
 

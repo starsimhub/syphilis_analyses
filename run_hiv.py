@@ -106,6 +106,11 @@ def plot_hiv(sim_output):
     ax[0, 0].plot(sim_output.index, sim_output['hiv.n_on_art'], label='n on ART')
     ax[0, 0].set_ylabel('Mio.')
     ax[0, 0].legend()
+
+    #####################################################################################################################
+    # Cumulative infections, diagnosed and on ART and cumulative states
+    #####################################################################################################################
+
     ax[0, 0].yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f'{x * 1e-6:0.1f}'))
     ax[0, 1].plot(sim_output.index, sim_output['hiv.cum_infections'], label='Cumulative Infections')
     ax[0, 1].plot(sim_output.index, sim_output['hiv.cum_diagnoses'], label='Cumulative Diagnoses')
@@ -117,33 +122,44 @@ def plot_hiv(sim_output):
     #####################################################################################################################
     # New Deaths and HIV Deaths
     #####################################################################################################################
-    ax[1, 0].plot(sim_output.index, sim_output['deaths.new'])
-    ax[1, 0].set_title('New Deaths')
-    ax[1, 1].plot(sim_output.index, sim_output['hiv.new_deaths'])
-    ax[1, 1].set_title('HIV Deaths')
+    ax[1, 0].plot(sim_output.index, sim_output['deaths.new'], label='New Deaths')
+    ax[1, 0].set_title('Deaths')
+    ax[1, 0].plot(sim_output.index, sim_output['hiv.new_deaths'], label='New HIV Deaths')
+    ax[1, 0].legend()
+
+    #####################################################################################################################
+    # New Diagnoses, Infections and on ART
+    #####################################################################################################################
+    ax[1, 1].set_title('New Diagnoses and on ART')
+    #ax[1, 1].plot(sim_output.index, sim_output['hiv.new_infections'], label='New Infections')
+    ax[1, 1].plot(sim_output.index, sim_output['hiv.new_diagnoses'], label='New Diagnoses')
+    ax[1, 1].plot(sim_output.index, sim_output['hiv.new_agents_on_art'], label='New on ART')
+    ax[1, 1].legend()
 
     #####################################################################################################################
     # HIV Prevalence
     #####################################################################################################################
-    ax[2, 0].plot(sim_output.index, sim_output['hiv.prevalence'], label='General Population')
-    ax[2, 0].set_title('HIV prevalence')
-    ax[2, 0].plot(sim_output.index, sim_output['hiv.prevalence_sw'], label='FSW')
-    ax[2, 0].plot(sim_output.index, sim_output['hiv.prevalence_client'], label='Client')
+    prevalence_data = pd.read_csv(f'data/world_bank_hiv_prevalence.csv', skiprows=4).set_index('Country Name').loc[location.capitalize()].dropna()[3:]
+    ax[2, 0].plot(prevalence_data.index.astype(int), prevalence_data.values, color='tab:red', label='Data (15-49)')
+    ax[2, 0].plot(sim_output.index, sim_output['hiv.prevalence'] * 100, label='General Population')
+    ax[2, 0].set_title('HIV prevalence (%)')
+    ax[2, 0].plot(sim_output.index, sim_output['hiv.prevalence_sw'] * 100, label='FSW')
+    ax[2, 0].plot(sim_output.index, sim_output['hiv.prevalence_client'] * 100, label='Client')
     ax[2, 0].legend()
 
-    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_0.0_f'], color='tab:blue', label='Risk Group 0 - Female')
-    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_1.0_f'], color='tab:green', label='Risk Group 1- Female')
-    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_2.0_f'], color='tab:orange', label='Risk Group 2- Female')
-    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_0.0_m'], color='tab:blue', linestyle='--', label='Risk Group 0 - Male')
-    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_1.0_m'], color='tab:green', linestyle='--', label='Risk Group 1- Male')
-    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_2.0_m'], color='tab:orange', linestyle='--', label='Risk Group 2- Male')
+    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_0.0_f'] * 100, color='tab:blue', label='Risk Group 0 - Female')
+    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_1.0_f'] * 100, color='tab:green', label='Risk Group 1- Female')
+    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_2.0_f'] * 100, color='tab:orange', label='Risk Group 2- Female')
+    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_0.0_m'] * 100, color='tab:blue', linestyle='--', label='Risk Group 0 - Male')
+    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_1.0_m'] * 100, color='tab:green', linestyle='--', label='Risk Group 1- Male')
+    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_2.0_m'] * 100, color='tab:orange', linestyle='--', label='Risk Group 2- Male')
     blue_patch = mpatches.Patch(color='tab:blue', label='Risk Group 0')
     green_patch = mpatches.Patch(color='tab:green', label='Risk Group 1')
     orange_patch = mpatches.Patch(color='tab:orange', label='Risk Group 2')
     females = Line2D([0], [0], label='females', color='k', linestyle='-')
     males = Line2D([0], [0], label='males', color='k', linestyle='--')
     ax[2, 1].legend(handles=[blue_patch, green_patch, orange_patch, females, males])
-    ax[2, 1].set_title('HIV prevalence by Risk Group and gender')
+    ax[2, 1].set_title('HIV prevalence (%) by Risk Group and gender')
 
     #####################################################################################################################
     # ART Coverage
@@ -163,41 +179,54 @@ def plot_hiv(sim_output):
 
     ax[3, 0].plot(sim_output.index, sim_output['hiv.n_on_art'] / sim_output['hiv.n_diagnosed'], label='Modelled')
     ax[3, 0].set_title('ART coverage (%)')
-    ax[3, 0].plot(ART_coverages_df["Years"], ART_coverages_df["Value"], label="Data")
+    ax[3, 0].plot(ART_coverages_df["Years"], ART_coverages_df["Value"], color='tab:red', label="Data")
     ax[3, 0].legend()
-    # ax[3, 0].yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f'{x * 1e-6:0.1f}'))
     ax[3, 0].set_xlim([2000.0, max(sim_output.iloc[1:].index)])
 
     ax[3, 1].plot(sim_output.index, sim_output['hiv.n_on_art'], label='Modelled')
     ax[3, 1].set_title('Number of people on ART (in Mio)')
-    ax[3, 1].plot(ART_coverages_df_numbers["Years"], ART_coverages_df_numbers["Value"] * pop_scale, label="Data")
+    ax[3, 1].plot(ART_coverages_df_numbers["Years"], ART_coverages_df_numbers["Value"] * pop_scale, color='tab:red', label="Data")
     ax[3, 1].legend()
     ax[3, 1].set_ylabel('Mio.')
     ax[3, 1].yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f'{x * 1e-6:0.1f}'))
     ax[3, 1].set_xlim([2000.0, max(sim_output.iloc[1:].index)])
 
     #####################################################################################################################
-    # New Diagnosed and Cumulative Diagnoses
+    # New Screened
     #####################################################################################################################
-    ax[4, 0].plot(sim_output.index, sim_output['hiv.new_diagnoses'])
-    ax[4, 0].set_title('New Diagnoses')
-    ax[4, 1].plot(sim_output.index, sim_output['hiv.cum_diagnoses'])
-    ax[4, 1].set_title('Cumulative Diagnoses')
-    ax[4, 1].set_ylabel('Mio.')
-    ax[4, 1].yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f'{x * 1e-6:0.1f}'))
+    ax[4, 0].plot(sim_output.index, sim_output['fsw_testing.new_screened'], label='FSW')
+    ax[4, 0].plot(sim_output.index, sim_output['other_testing.new_screened'], label='General Population')
+    ax[4, 0].plot(sim_output.index, sim_output['low_cd4_testing.new_screened'], label='CD4 count <200')
+    ax[4, 0].set_title('New Screened')
+    ax[4, 0].legend()
 
-    # ax[5, 0].plot(sim_output.index, sim_output['hiv.n_diagnosed'])
-    # ax[5, 0].set_title('n diagnosed')
-    # ax[5, 0].yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f'{x * 1e-6:0.1f}'))
-    # ax[5, 0].set_ylabel('Mio.')
+    #####################################################################################################################
+    # New Screens
+    #####################################################################################################################
+    ax[4, 1].plot(sim_output.index, sim_output['fsw_testing.new_screens'], label='FSW')
+    ax[4, 1].plot(sim_output.index, sim_output['other_testing.new_screens'], label='General Population')
+    ax[4, 1].plot(sim_output.index, sim_output['low_cd4_testing.new_screens'], label='CD4 count <200')
+    ax[4, 1].set_title('New Screens')
+    ax[4, 1].legend()
+
+    #####################################################################################################################
+    # Pregnancies & Births
+    #####################################################################################################################
+    ax[5, 0].plot(sim_output.index, sim_output['pregnancy.pregnancies'], label='Pregnancies')
+    ax[5, 0].plot(sim_output.index, sim_output['pregnancy.births'], label='Births')
+    ax[5, 0].set_title('Pregnancies and Births')
+    ax[5, 0].legend()
 
     #####################################################################################################################
     # Population
     #####################################################################################################################
-    ax[5, 1].plot(sim_output.index, sim_output['n_alive'])
+    population_data = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Population size', skiprows=72).iloc[0:1, 3:36]
+    ax[5, 1].plot(np.arange(1990, 2022+1, 1), population_data.loc[0].values, color='tab:red', label='Data')
+    ax[5, 1].plot(sim_output.index, sim_output['n_alive'], label='Modelled')
     ax[5, 1].set_title('Population')
     ax[5, 1].yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f'{x * 1e-6:0.1f}'))
     ax[5, 1].set_ylabel('Mio.')
+    ax[5, 1].legend()
 
     fig.tight_layout()
     # plt.show()
@@ -295,9 +324,9 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
     hiv.pars['beta'] = {'structuredsexual': [0.95, 0.95], 'maternal': [0.08, 0.5]}
     hiv.pars['init_prev'] = ss.bernoulli(p=0.15)
     hiv.pars['cd4_start_mean'] = 800
-    hiv.pars['init_diagnosed'] = ss.bernoulli(p=0.01)  # Proportion of initially infected agents who start out as diagnosed
+    hiv.pars['init_diagnosed'] = ss.bernoulli(p=0.15)  # Proportion of initially infected agents who start out as diagnosed
     hiv.pars['primary_acute_inf_dur'] = 2.9  # in months
-    hiv.pars['transmission_sd'] = 0.00  # Standard Deviation of normal distribution for transmission.
+    hiv.pars['transmission_sd'] = 0.0  # Standard Deviation of normal distribution for randomness in transmission.
 
     ####################################################################################################################
     # Treatment Data
