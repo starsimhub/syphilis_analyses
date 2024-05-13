@@ -346,7 +346,7 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
     hiv = HIV()
     hiv.pars['beta'] = {'structuredsexual': [0.95, 0.95], 'maternal': [0.08, 0.5]}
     hiv.pars['init_prev'] = ss.bernoulli(p=0.15)
-    hiv.pars['cd4_start_mean'] = 800
+    hiv.pars['cd4_start_dist'] = ss.normal(loc=800, scale=10)
     hiv.pars['init_diagnosed'] = ss.bernoulli(p=0.15)  # Proportion of initially infected agents who start out as diagnosed
     hiv.pars['primary_acute_inf_dur'] = 2.9  # in months
     hiv.pars['transmission_sd'] = 0.0  # Standard Deviation of normal distribution for randomness in transmission.
@@ -404,7 +404,7 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
                            art_efficacy=0.96),
                        validate_ART(disease='hiv',
                                     uids=save_agents,
-                                    infect_uids_t=np.repeat(0, len(save_agents)),
+                                    infect_uids_t=np.repeat(200, len(save_agents)),
                                     stop_ART=True,
                                     restart_ART=True)],
         demographics=[pregnancy, death])

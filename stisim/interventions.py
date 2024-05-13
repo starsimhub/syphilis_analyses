@@ -402,7 +402,7 @@ class validate_ART(ss.Intervention):
                 self.results['cd4_count_' + str(uid)][sim.ti] = sim.diseases[self.disease].cd4[ss.uids(uid)]
                 self.results['ART_status_' + str(uid)][sim.ti] = ART_status
                 self.results['status_' + str(uid)][sim.ti] = 'alive'
-                self.results['transmission_' + str(uid)][sim.ti] = sim.diseases[self.disease].rel_trans[ss.uids(uid)]
+                self.results['transmission_' + str(uid)][sim.ti] = sim.diseases[self.disease].rel_trans[ss.uids(uid)] * sim.diseases[self.disease].infected[ss.uids(uid)]
 
             else:
                 self.results['cd4_count_' + str(uid)][sim.ti] = np.nan
