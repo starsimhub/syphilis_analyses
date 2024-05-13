@@ -92,8 +92,7 @@ class HIV(ss.Infection):
         infected_uids_not_onART_cd4_above_200_uids = initial_cases[infected_uids_not_onART_cd4_above_200]
         transmission_not_onART_cd4_above_200 = self.pars.transmission_timecourse[duration_since_infection_transmission[infected_uids_not_onART_cd4_above_200]]
         # Randomize:
-        transmission_random_factor = ss.normal(loc=1, scale=self.pars.transmission_sd).initialize().rvs(len(transmission_not_onART_cd4_above_200))
-        self.rel_trans[ss.uids(infected_uids_not_onART_cd4_above_200_uids)] = transmission_random_factor * transmission_not_onART_cd4_above_200
+        self.rel_trans[ss.uids(infected_uids_not_onART_cd4_above_200_uids)] = transmission_not_onART_cd4_above_200
         # Update transmission for agents with a cd4 count <200
         uids_below_200 = initial_cases[self.cd4[initial_cases] < 200]
         # Calculate how many momths the agent has been <200 counts to get the correct transmission:
@@ -102,8 +101,7 @@ class HIV(ss.Infection):
             ti_200_to_50 = (150 / (cd4_count_changes[-1] * self.cd4_start[uids_below_200]) * (-1)).astype(int)
             ti_under200 = (200 - self.cd4[uids_below_200]) / (-1 * cd4_count_changes[-1] * self.cd4_start[uids_below_200])
             transmission_below_200 = np.minimum(self.rel_trans[uids_below_200] + ti_under200 * ((6-1) / ti_200_to_50), 6)
-            transmission_random_factor = ss.normal(loc=1, scale=self.pars.transmission_sd).initialize().rvs(len(transmission_below_200))
-            self.rel_trans[uids_below_200] = transmission_random_factor * transmission_below_200
+            self.rel_trans[uids_below_200] = transmission_below_200
 
         return
 
@@ -245,16 +243,13 @@ class HIV(ss.Infection):
         infected_uids_not_onART_cd4_above_200 = self.cd4[infected_uids_not_onART] >= 200
         infected_uids_not_onART_cd4_above_200_uids = infected_uids_not_onART.uids[infected_uids_not_onART_cd4_above_200]
         transmission_not_onART_cd4_above_200 = self.pars.transmission_timecourse[duration_since_infection_transmission[infected_uids_not_onART_cd4_above_200]]
-        # Randomize:
-        transmission_random_factor = ss.normal(loc=1, scale=self.pars.transmission_sd).initialize().rvs(len(transmission_not_onART_cd4_above_200))
-        self.rel_trans[ss.uids(infected_uids_not_onART_cd4_above_200_uids)] = transmission_random_factor * transmission_not_onART_cd4_above_200
+        self.rel_trans[ss.uids(infected_uids_not_onART_cd4_above_200_uids)] = transmission_not_onART_cd4_above_200
 
         # Update transmission for agents on ART
         # When agents start ART, determine the reduction of transmission (linearly decreasing over 6 months)
         self.get_transmission_reduction(duration_since_onART_transmission, infected_uids_onART.uids)
         transmission_onART = np.maximum(1 - self.pars.art_efficacy, self.rel_trans[infected_uids_onART] - self.art_transmission_reduction[infected_uids_onART])
-        transmission_random_factor = ss.normal(loc=1, scale=self.pars.transmission_sd).initialize().rvs(len(transmission_onART))
-        self.rel_trans[infected_uids_onART] = transmission_random_factor * transmission_onART
+        self.rel_trans[infected_uids_onART] = transmission_onART
 
         # Overwrite transmission for agents whose CD4 counts are below 200:
         uids_below_200 = self.cd4 < 200
@@ -262,8 +257,8 @@ class HIV(ss.Infection):
         if len(uids_below_200.uids) > 0:
             ti_200_to_50 = (150 / (cd4_count_changes[-1] * self.cd4_start[uids_below_200]) * (-1)).astype(int)
             transmission_below_200 = np.minimum(self.rel_trans[uids_below_200] + (6 - 1) / ti_200_to_50, 6)
-            transmission_random_factor = ss.normal(loc=1, scale=self.pars.transmission_sd).initialize().rvs(len(transmission_below_200))
-            self.rel_trans[uids_below_200] = transmission_random_factor * transmission_below_200
+            self.rel_trans[uids_below_200] = transmission_below_200
+
         return
 
     def get_transmission_reduction(self, durs_onART, uids_onART):

@@ -349,7 +349,7 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
     hiv.pars['cd4_start_mean'] = 800
     hiv.pars['init_diagnosed'] = ss.bernoulli(p=0.15)  # Proportion of initially infected agents who start out as diagnosed
     hiv.pars['primary_acute_inf_dur'] = 2.9  # in months
-    hiv.pars['transmission_sd'] = 0.1  # Standard Deviation of normal distribution for randomness in transmission.
+    hiv.pars['transmission_sd'] = 0.0  # Standard Deviation of normal distribution for randomness in transmission.
 
     ####################################################################################################################
     # Treatment Data
