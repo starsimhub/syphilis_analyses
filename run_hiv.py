@@ -55,8 +55,9 @@ def plot_V_level(sim_output):
 
 def plot_viral_dynamics(output, save_agents):
     """
-    2 Subplots to show viral load, CD4 count
+    2 Subplots to show transmission probability and CD4 counts
     """
+    tivec = np.arange(start=1990, stop=2030 + 1 / 12, step=1 / 12)
     for index, agent in enumerate(save_agents):
         fig, ax = plt.subplots(1, 2, figsize=(25, 8))
         df_this_agent = output[output.columns[output.columns.str.contains('_' + str(agent))]].dropna()
@@ -65,7 +66,12 @@ def plot_viral_dynamics(output, save_agents):
         sns.scatterplot(ax=ax[1], x=df_this_agent.index, y="cd4_count_" + str(agent), data=df_this_agent,
                         hue='ART_status_' + str(agent))
 
-        ax[0].set_xlabel('Time (months)')
+        ax[0].xaxis.set_ticks(df_this_agent.index[::12 * 5])
+        ax[0].set_xticklabels(np.ceil(tivec[df_this_agent.index][::12 * 5]).astype(int))
+        ax[1].xaxis.set_ticks(df_this_agent.index[::12 * 5])
+        ax[1].set_xticklabels(np.ceil(tivec[df_this_agent.index][::12 * 5]).astype(int))
+
+        ax[0].set_xlabel('Time')
         # ax[0].set_yscale('log')
         ax[0].set_ylim([0, 7])
         ax[0].set_xlim([0, len(output)])
@@ -73,7 +79,7 @@ def plot_viral_dynamics(output, save_agents):
         ax[0].set_title('Transmission probability')
 
         # CD4-count
-        ax[1].set_xlabel('Time (months)')
+        ax[1].set_xlabel('Time')
         ax[1].set_ylabel('CD4-count')
         ax[1].set_title('CD4-count')
         ax[1].set_ylim([0, 1000])
@@ -131,7 +137,7 @@ def plot_hiv(sim_output):
     # New Diagnoses, Infections and on ART
     #####################################################################################################################
     ax[1, 1].set_title('New Diagnoses and on ART')
-    #ax[1, 1].plot(sim_output.index, sim_output['hiv.new_infections'], label='New Infections')
+    # ax[1, 1].plot(sim_output.index, sim_output['hiv.new_infections'], label='New Infections')
     ax[1, 1].plot(sim_output.index, sim_output['hiv.new_diagnoses'], label='New Diagnoses')
     ax[1, 1].plot(sim_output.index, sim_output['hiv.new_agents_on_art'], label='New on ART')
     ax[1, 1].legend()
@@ -194,19 +200,36 @@ def plot_hiv(sim_output):
     #####################################################################################################################
     # New Screened
     #####################################################################################################################
-    ax[4, 0].plot(sim_output.index, sim_output['fsw_testing.new_screened'], label='FSW')
-    ax[4, 0].plot(sim_output.index, sim_output['other_testing.new_screened'], label='General Population')
-    ax[4, 0].plot(sim_output.index, sim_output['low_cd4_testing.new_screened'], label='CD4 count <200')
-    ax[4, 0].set_title('New Screened')
-    ax[4, 0].legend()
+    ax[4, 0].plot(sim_output.index, sim_output['fsw_testing.new_screened'], color='tab:orange', label='FSW')
+    ax[4, 0].plot(sim_output.index, sim_output['other_testing.new_screened'], color='tab:blue', label='General Population')
+    ax[4, 0].plot(sim_output.index, sim_output['low_cd4_testing.new_screened'], color='tab:green', label='CD4 count <200')
+    ax[4, 0].plot(sim_output.index, sim_output['fsw_testing.new_screens'], color='tab:orange', linestyle='--', label='FSW')
+    ax[4, 0].plot(sim_output.index, sim_output['other_testing.new_screens'], color='tab:blue', linestyle='--', label='General Population')
+    ax[4, 0].plot(sim_output.index, sim_output['low_cd4_testing.new_screens'], color='tab:green', linestyle='--', label='CD4 count <200')
+    ax[4, 0].set_title('New Screened and New Screens')
+    orange_patch = mpatches.Patch(color='tab:orange', label='FSW')
+    blue_patch = mpatches.Patch(color='tab:blue', label='General Population')
+    green_patch = mpatches.Patch(color='tab:green', label='CD4 count <200')
+    screened = Line2D([0], [0], label='new screened', color='k', linestyle='-')
+    screens = Line2D([0], [0], label='new screens', color='k', linestyle='--')
+    ax[4, 0].legend(handles=[blue_patch, green_patch, orange_patch, screened, screens])
 
     #####################################################################################################################
-    # New Screens
+    # Yearly Tests
     #####################################################################################################################
-    ax[4, 1].plot(sim_output.index, sim_output['fsw_testing.new_screens'], label='FSW')
-    ax[4, 1].plot(sim_output.index, sim_output['other_testing.new_screens'], label='General Population')
-    ax[4, 1].plot(sim_output.index, sim_output['low_cd4_testing.new_screens'], label='CD4 count <200')
-    ax[4, 1].set_title('New Screens')
+    n_tests_data = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Optional indicators', skiprows=1).iloc[[1], 2:36]
+    # Remove nans:
+    # Calculate yearly tests in the model:
+    ax[4, 1].scatter(n_tests_data.columns, n_tests_data.values[0], color='tab:red', label='Data')
+    sim_output['year'] = np.floor(np.round(sim_output.index, 1)).astype(int)
+    # ax[4, 1].scatter(np.unique(sim_output['year']), sim_output.groupby(by='year')['fsw_testing.new_screens'].sum(), marker='o', label='FSW')
+    # ax[4, 1].scatter(np.unique(sim_output['year']), sim_output.groupby(by='year')['other_testing.new_screens'].sum(), marker='o', label='General Population')
+    # ax[4, 1].scatter(np.unique(sim_output['year']), sim_output.groupby(by='year')['low_cd4_testing.new_screens'].sum(), marker='o', label='CD4 count <200')
+    ax[4, 1].scatter(np.unique(sim_output['year']), sim_output.groupby(by='year')['low_cd4_testing.new_screens'].sum()
+                  + sim_output.groupby(by='year')['other_testing.new_screens'].sum()
+                  + sim_output.groupby(by='year')['fsw_testing.new_screens'].sum(), label='FSW + Other + Low CD4 count testing')
+    ax[4, 1].yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f'{x * 1e-6:0.1f}'))
+    ax[4, 1].set_title('Yearly Tests (in Mio)')
     ax[4, 1].legend()
 
     #####################################################################################################################
@@ -221,7 +244,7 @@ def plot_hiv(sim_output):
     # Population
     #####################################################################################################################
     population_data = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Population size', skiprows=72).iloc[0:1, 3:36]
-    ax[5, 1].plot(np.arange(1990, 2022+1, 1), population_data.loc[0].values, color='tab:red', label='Data')
+    ax[5, 1].plot(np.arange(1990, 2022 + 1, 1), population_data.loc[0].values, color='tab:red', label='Data')
     ax[5, 1].plot(sim_output.index, sim_output['n_alive'], label='Modelled')
     ax[5, 1].set_title('Population')
     ax[5, 1].yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f'{x * 1e-6:0.1f}'))
@@ -326,7 +349,7 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
     hiv.pars['cd4_start_mean'] = 800
     hiv.pars['init_diagnosed'] = ss.bernoulli(p=0.15)  # Proportion of initially infected agents who start out as diagnosed
     hiv.pars['primary_acute_inf_dur'] = 2.9  # in months
-    hiv.pars['transmission_sd'] = 0.0  # Standard Deviation of normal distribution for randomness in transmission.
+    hiv.pars['transmission_sd'] = 0.1  # Standard Deviation of normal distribution for randomness in transmission.
 
     ####################################################################################################################
     # Treatment Data
