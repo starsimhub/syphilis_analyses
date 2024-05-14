@@ -10,19 +10,29 @@ Overview:
 """
 
 import starsim as ss
+import sciris as sc
 import numpy as np
 import pandas as pd
 
+ss_float_ = ss.dtypes.float
 
-class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
+
+class StructuredSexual(ss.SexualNetwork):
     """
     Structured sexual network
     """
 
-    def __init__(self, pars=None, par_dists=None, key_dict=None, **kwargs):
-        pars = ss.omergeleft(
-            pars,
+    def __init__(self, pars=None, key_dict=None, **kwargs):
 
+        key_dict = sc.mergedicts({
+            'sw': bool,
+            'age_p1': ss_float_,
+            'age_p2': ss_float_,
+        }, key_dict)
+
+        super().__init__(key_dict=key_dict)
+
+        self.default_pars(
             # Settings - generally shouldn't be adjusted
             n_risk_groups=3,
             f_age_group_bins=dict(  # For separating women into age groups: teens, young women, adult women
@@ -74,8 +84,8 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
             acts=ss.normal(loc=90, scale=30),  # Annual acts
 
             # Sex work parameters
-            fsw_shares=0.02,
-            client_shares=0.12,
+            fsw_shares=ss.bernoulli(p=0.02),
+            client_shares=ss.bernoulli(p=0.12),
             sw_seeking_rate=0.5,  # Annual rate at which clients seek FSWs (0.5 = 1 new SW partner every 2 years)
             sw_seeking_dist=ss.bernoulli(p=0.5),  # Placeholder value replaced by dt-adjusted sw_seeking_rate
             sw_beta=0.5,  # Replace with condom use
@@ -86,32 +96,16 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
             dur_casual=ss.normal(loc=self.casual_loc, scale=self.casual_scale),
         )
 
-        par_dists = ss.omergeleft(
-            par_dists,
-            fsw_shares=ss.bernoulli,
-            client_shares=ss.bernoulli,
-        )
-
-        key_dict = ss.omerge({
-            'sw': bool,
-            'age_p1': float,
-            'age_p2': float,
-        }, key_dict)
-
-        ss.DynamicNetwork.__init__(self, key_dict=key_dict, **kwargs)
-        ss.SexualNetwork.__init__(self, pars, key_dict=key_dict, **kwargs)
-
-        self.par_dists = par_dists
+        self.update_pars(pars=pars, **kwargs)
 
         # Add states
-        self.risk_group = ss.State('risk_group', int, default=0)
-        self.fsw = ss.State('fsw', bool, default=False)
-        self.client = ss.State('client', bool, default=False)
-        self.debut = ss.State('debut', float, default=0)
-        self.participant = ss.State('participant', bool, default=True)
-        self.concurrency = ss.State('concurrency', int, default=1)
-        self.partners = ss.State('partners', int, default=0)
-        self.lifetime_partners = ss.State('lifetime_partners', int, default=0)
+        self.participant = ss.BoolArr('participant', default=True)
+        self.risk_group = ss.FloatArr('risk_group')     # Which risk group an agent belongs to
+        self.fsw = ss.BoolArr('fsw')                    # Whether an agent is a female sex worker
+        self.client = ss.BoolArr('client')              # Whether an agent is a client of sex workers
+        self.concurrency = ss.FloatArr('concurrency')   # Preferred number of concurrent partners
+        self.partners = ss.FloatArr('partners', default=0)  # Actual number of concurrent partners
+        self.lifetime_partners = ss.FloatArr('lifetime_partners', default=0)   # Lifetime total number of partners
 
         return
 
@@ -124,7 +118,7 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
             for rg in range(module.pars.n_risk_groups):
                 age_conds = (sim.people.age[uids] >= a_range[0]) & (sim.people.age[uids] < a_range[1])
                 f_el_bools = age_conds & (module.risk_group[uids] == rg) & sim.people.female[uids]
-                f_el_uids = ss.true(f_el_bools)
+                f_el_uids = uids[f_el_bools.nonzero()[0]]  # FIX THIS
                 loc[f_el_uids] = module.pars[par][a_label][rg][0]
                 scale[f_el_uids] = module.pars[par][a_label][rg][1]
         return loc, scale
@@ -159,61 +153,61 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
         _, scale = module.get_age_risk_pars(module, sim, uids, par)
         return scale
 
-    def initialize(self, sim):
-        super().initialize(sim)
-        self.set_network_states(sim.people)
+    def init_vals(self):
+        super().init_vals(add_pairs=False)
+        self.set_network_states()
         return
 
-    def set_network_states(self, people, upper_age=1000):
-        self.set_risk_groups(people, upper_age=upper_age)
-        self.set_concurrency(people, upper_age=upper_age)
-        self.set_sex_work(people, upper_age=upper_age)
-        self.set_debut(people, upper_age=upper_age)
+    def set_network_states(self, upper_age=None):
+        self.set_risk_groups(upper_age=upper_age)
+        self.set_concurrency(upper_age=upper_age)
+        self.set_sex_work(upper_age=upper_age)
+        self.set_debut(upper_age=upper_age)
         return
 
-    @staticmethod
-    def _get_uids(people, upper_age=None, by_sex=True):
-        if upper_age is None: uids = people.uid
-        else: uids = people.uid[(people.age < upper_age)]
+    def _get_uids(self, upper_age=None, by_sex=True):
+        people = self.sim.people
+        if upper_age is None: upper_age = 1000
+        within_age = people.age < upper_age
         if by_sex:
-            f_uids = uids[people.female[uids]]
-            m_uids = uids[people.male[uids]]
+            f_uids = (within_age & people.female).uids
+            m_uids = (within_age & people.male).uids
             return f_uids, m_uids
         else:
+            uids = within_age.uids
             return uids
 
-    def set_risk_groups(self, people, upper_age=None):
+    def set_risk_groups(self, upper_age=None):
         """ Assign each person to a risk group """
-        f_uids, m_uids = self._get_uids(people, upper_age=upper_age)
+        f_uids, m_uids = self._get_uids(upper_age=upper_age)
         self.risk_group[f_uids] = self.pars.risk_groups_f.rvs(f_uids)
         self.risk_group[m_uids] = self.pars.risk_groups_m.rvs(m_uids)
         return
 
-    def set_concurrency(self, people, upper_age=1000):
+    def set_concurrency(self, upper_age=None):
         """ Assign each person a preferred number of simultaneous partners """
-        uids = people.uid
-        female = people.female
-        male = people.male
+        people = self.sim.people
+        if upper_age is None: upper_age = 1000
         in_age_lim = (people.age < upper_age)
         for rg in range(self.pars.n_risk_groups):
             f_conc = self.pars[f'f{rg}_conc']
             m_conc = self.pars[f'm{rg}_conc']
             in_risk_group = self.risk_group == rg
             in_group = in_risk_group & in_age_lim
-            f_uids = uids[female & in_group]
-            m_uids = uids[male   & in_group]
+            f_uids = (people.female & in_group).uids
+            m_uids = (people.male   & in_group).uids
             self.concurrency[f_uids] = f_conc.rvs(f_uids) + 1
             self.concurrency[m_uids] = m_conc.rvs(m_uids) + 1
         return
 
-    def set_sex_work(self, people, upper_age=None):
-        f_uids, m_uids = self._get_uids(people, upper_age=upper_age)
+    def set_sex_work(self, upper_age=None):
+        f_uids, m_uids = self._get_uids(upper_age=upper_age)
         self.fsw[f_uids] = self.pars.fsw_shares.rvs(f_uids)
         self.client[m_uids] = self.pars.client_shares.rvs(m_uids)
         return
 
-    def set_debut(self, people, upper_age=None):
-        f_uids, m_uids = self._get_uids(people, upper_age=upper_age)
+    def set_debut(self, upper_age=None):
+        f_uids, m_uids = self._get_uids(upper_age=upper_age)
         self.debut[f_uids] = self.pars.debut_f.rvs(f_uids)
         self.debut[m_uids] = self.pars.debut_m.rvs(m_uids)
         return
@@ -229,7 +223,7 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
         underpartnered = self.partners < self.concurrency
         f_eligible = f_active & underpartnered
         m_eligible = m_active & underpartnered
-        f_looking = self.pars.p_pair_form.filter(ss.true(f_eligible))  # To do: let p vary by age and with dt
+        f_looking = self.pars.p_pair_form.filter(f_eligible.uids)  # ss.uids of women looking for partners
 
         # Get mean age differences and desired ages
         age_gaps = self.pars.age_diffs.rvs(f_looking)   # Sample the age differences
@@ -237,20 +231,17 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
 
         # Sort the females according to the desired age of their partners
         desired_age_idx = np.argsort(desired_ages)  # Array positions for sorting the desired ages
-        p2 = desired_ages.uid[desired_age_idx]      # Female UIDs sorted by age of their desired partner
-        sorted_desired_ages = desired_ages[p2]      # Sorted desired ages
+        p2 = f_looking[desired_age_idx]      # Female UIDs sorted by age of their desired partner
+        sorted_desired_ages = desired_ages[desired_age_idx]      # Sorted desired ages
 
         # Sort the males by age
         m_ages = ppl.age[m_eligible]            # Ages of eligible males
         m_age_sidx = np.argsort(m_ages)         # Array positions for sorting the ages of males
-        sorted_m_uids = m_ages.uid[m_age_sidx]  # Male UIDs sorted by age
-        sorted_m_ages = m_ages[sorted_m_uids]   # Sort male ages
+        sorted_m_uids = ss.uids(m_eligible.uids[m_age_sidx])  # Male UIDs sorted by age
+        sorted_m_ages = m_ages[m_age_sidx]   # Sort male ages
 
         # Get matches
-        try:
-            match_inds = abs(sorted_desired_ages.values[:, None] - sorted_m_ages.values[None, :]).argmin(axis=-1)
-        except:
-            import traceback; traceback.print_exc(); import pdb; pdb.set_trace()
+        match_inds = abs(sorted_desired_ages[:, None] - sorted_m_ages[None, :]).argmin(axis=-1)
         p1 = sorted_m_uids[match_inds]
 
         self.partners[p1] += 1
@@ -260,24 +251,26 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
 
         return p1, p2
 
-    def add_pairs(self, ppl, ti=None):
+    def add_pairs(self, ti=None):
         """ Add pairs """
+        ppl = self.sim.people
+        dt = self.sim.dt
         p1, p2 = self.match_pairs(ppl)
 
         # Initialize beta, acts, duration
         beta = pd.Series(1., index=p2)
-        dur = pd.Series(ppl.dt, index=p2)  # Default duration is dt, replaced for stable matches
-        acts = (self.pars.acts.rvs(p2) * ppl.dt).astype(int)  # Number of acts does not depend on commitment/risk group
+        dur = pd.Series(dt, index=p2)  # Default duration is dt, replaced for stable matches
+        acts = (self.pars.acts.rvs(p2) * dt).astype(int)  # Number of acts does not depend on commitment/risk group
         sw = np.full_like(p1, False, dtype=bool)
-        age_p1 = ppl.age[p1].values
-        age_p2 = ppl.age[p2].values
+        age_p1 = ppl.age[p1]
+        age_p2 = ppl.age[p2]
 
         # If both partners are in the same risk group, determine the probability they'll commit
         for rg in range(self.pars.n_risk_groups):
             matched_risk = (self.risk_group[p1] == rg) & (self.risk_group[p2] == rg)
 
             # If there are any matched pairs, check if they commit
-            if len(ss.true(matched_risk)) > 0:
+            if matched_risk.any():
 
                 matched_p2 = p2[matched_risk]
                 stable_dist = self.pars[f'p_stable{rg}']   # To do: let p vary by age
@@ -292,52 +285,51 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
                     casual_p2 = matched_p2[casual_bools]
                     dur[casual_p2] = self.pars.dur_casual.rvs(casual_p2)
 
+
+        self.append(p1=p1, p2=p2, beta=beta, dur=dur, acts=acts, sw=sw, age_p1=age_p1, age_p2=age_p2)
+
         # Get sex work values
         p1_sw, p2_sw, beta_sw, dur_sw, acts_sw, sw_sw, age_p1_sw, age_p2_sw = self.add_sex_work(ppl)
+        self.append(p1=p1_sw, p2=p1_sw, beta=beta_sw, dur=dur_sw, acts=acts_sw, sw=sw_sw, age_p1=age_p1_sw, age_p2=age_p2_sw)
 
-        self.contacts.p1 = np.concatenate([self.contacts.p1, p1, p1_sw])
-        self.contacts.p2 = np.concatenate([self.contacts.p2, p2, p2_sw])
-        self.contacts.beta = np.concatenate([self.contacts.beta, beta.values, beta_sw.values])
-        self.contacts.dur = np.concatenate([self.contacts.dur, dur.values, dur_sw.values])
-        self.contacts.acts = np.concatenate([self.contacts.acts, acts, acts_sw])
-        self.contacts.sw = np.concatenate([self.contacts.sw, sw, sw_sw])
-        self.contacts.age_p1 = np.concatenate([self.contacts.age_p1, age_p1, age_p1_sw])
-        self.contacts.age_p2 = np.concatenate([self.contacts.age_p2, age_p2, age_p2_sw])
 
     def add_sex_work(self, ppl):
         """ Match sex workers to clients """
 
+        dt = self.sim.dt
         # Find people eligible for a relationship
         active_fsw = self.active(ppl) & ppl.female & self.fsw
         active_clients = self.active(ppl) & ppl.male & self.client
 
         # Find clients who will seek FSW
-        self.pars.sw_seeking_dist.pars.p = self.pars.sw_seeking_rate * ppl.dt
-        m_looking = self.pars.sw_seeking_dist.filter(ss.true(active_clients))
+        self.pars.sw_seeking_dist.pars.p = self.pars.sw_seeking_rate * dt
+        m_looking = self.pars.sw_seeking_dist.filter(active_clients.uids)
 
         # Replace this with choice
-        if len(m_looking) > len(ss.true(active_fsw)):  # Replace this - should assign an FSW to all potential clients
-            n_pairs = len(ss.true(active_fsw))
-            p2 = ss.true(active_fsw)
+        if len(m_looking) > len(active_fsw.uids):  # Replace this - should assign an FSW to all potential clients
+            n_pairs = len(active_fsw.uids)
+            p2 = active_fsw.uids
             p1 = m_looking[:n_pairs]
         else:
             n_pairs = len(m_looking)
-            p2 = ss.true(active_fsw)[:n_pairs]
+            p2 = active_fsw.uids[:n_pairs]
             p1 = m_looking
 
         # Beta, acts, duration
         beta = pd.Series(self.pars.sw_beta, index=p2)
-        dur = pd.Series(ppl.dt, index=p2)  # Assumed instantaneous
-        acts = (self.pars.acts.rvs(p2) * ppl.dt).astype(int)  # Could alternatively set to 1 and adjust beta
+        dur = pd.Series(dt, index=p2)  # Assumed instantaneous
+        acts = (self.pars.acts.rvs(p2) * dt).astype(int)  # Could alternatively set to 1 and adjust beta
         sw = np.full_like(p1, True, dtype=bool)
 
         self.lifetime_partners[p1] += 1
         self.lifetime_partners[p2] += 1
 
-        return p1, p2, beta, dur, acts, sw, ppl.age[p1].values, ppl.age[p2].values
+        return p1, p2, beta, dur, acts, sw, ppl.age[p1], ppl.age[p2]
 
-    def end_pairs(self, people):
-        dt = people.dt
+    def end_pairs(self):
+        people = self.sim.people
+        dt = self.sim.dt
+
         self.contacts.dur = self.contacts.dur - dt
 
         # Non-alive agents are removed
@@ -356,9 +348,9 @@ class StructuredSexual(ss.SexualNetwork, ss.DynamicNetwork):
 
         return
 
-    def update(self, people, dt=None):
-        self.end_pairs(people)
-        self.set_network_states(people, upper_age=people.dt)
-        self.add_pairs(people)
+    def update(self):
+        self.end_pairs()
+        self.set_network_states(upper_age=self.sim.dt)
+        self.add_pairs()
 
         return

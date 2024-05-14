@@ -113,7 +113,7 @@ def plot_degree(sim):
 
     nw = sim.networks['structuredsexual']
 
-    for ai, sex in enumerate(['f', 'm']):
+    for ai, sex in enumerate(['female', 'male']):
         for rg in range(4):
 
             active = sim.people[sex] & (nw.active(sim.people))
