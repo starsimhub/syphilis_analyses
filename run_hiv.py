@@ -102,11 +102,13 @@ def plot_hiv(sim_output):
     - n on ART
     """
 
-    fig, ax = plt.subplots(6, 2, figsize=(20, 15))
+    fig, ax = plt.subplots(7, 2, figsize=(20, 15))
 
     #####################################################################################################################
     # n infections, diagnosed and on ART and cumulative states
     #####################################################################################################################
+    n_infections_data = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Optional indicators', skiprows=33).iloc[[1], 2:36]
+    ax[0, 0].scatter(n_infections_data.columns, n_infections_data.values, label='Data - number of PLHIV', color='tab:red')
     ax[0, 0].plot(sim_output.index, sim_output['hiv.n_infected'], label='n infected')
     ax[0, 0].plot(sim_output.index, sim_output['hiv.n_diagnosed'], label='n diagnosed')
     ax[0, 0].plot(sim_output.index, sim_output['hiv.n_on_art'], label='n on ART')
@@ -128,9 +130,13 @@ def plot_hiv(sim_output):
     #####################################################################################################################
     # New Deaths and HIV Deaths
     #####################################################################################################################
-    ax[1, 0].plot(sim_output.index, sim_output['deaths.new'], label='New Deaths')
+    hiv_deaths_data = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Optional indicators', skiprows=41).iloc[[1], 2:36]
+    ax[1, 0].scatter(hiv_deaths_data.columns, hiv_deaths_data.values[0], color='tab:red', label='Data - yearly HIV deaths')
+    sim_output['year'] = np.floor(np.round(sim_output.index, 1)).astype(int)
+    ax[1, 0].plot(np.unique(sim_output['year']), sim_output.groupby(by='year')['hiv.new_deaths'].sum(), color='tab:blue', label='Modelled - yearly HIV deaths')
     ax[1, 0].set_title('Deaths')
-    ax[1, 0].plot(sim_output.index, sim_output['hiv.new_deaths'], label='New HIV Deaths')
+    ax[1, 0].plot(sim_output.index, sim_output['deaths.new'], color='tab:orange', label='New Deaths')
+    ax[1, 0].plot(sim_output.index, sim_output['hiv.new_deaths'], color='tab:blue', label='New HIV Deaths')
     ax[1, 0].legend()
 
     #####################################################################################################################
@@ -146,7 +152,7 @@ def plot_hiv(sim_output):
     # HIV Prevalence
     #####################################################################################################################
     prevalence_data = pd.read_csv(f'data/world_bank_hiv_prevalence.csv', skiprows=4).set_index('Country Name').loc[location.capitalize()].dropna()[3:]
-    ax[2, 0].plot(prevalence_data.index.astype(int), prevalence_data.values, color='tab:red', label='Data (15-49)')
+    ax[2, 0].scatter(prevalence_data.index.astype(int), prevalence_data.values, color='tab:red', label='Data (15-49)')
     ax[2, 0].plot(sim_output.index, sim_output['hiv.prevalence'] * 100, label='General Population')
     ax[2, 0].set_title('HIV prevalence (%)')
     ax[2, 0].plot(sim_output.index, sim_output['hiv.prevalence_sw'] * 100, label='FSW')
@@ -171,7 +177,7 @@ def plot_hiv(sim_output):
     # ART Coverage
     #####################################################################################################################
     ART_coverages_raw = pd.read_csv(f'data/world_bank_art_coverages.csv', skiprows=4).set_index('Country Name').loc[location.capitalize()].dropna()[3:]
-    tivec = np.arange(start=1990, stop=2021 + 1 / 12, step=1 / 12)
+    tivec = np.arange(start=1990, stop=2021 + 1 / 12, step=1)
     ART_coverages_df = pd.DataFrame({"Years": tivec,
                                      "Value": (np.interp(tivec,
                                                          ART_coverages_raw.index.astype(int).tolist(),
@@ -185,13 +191,13 @@ def plot_hiv(sim_output):
 
     ax[3, 0].plot(sim_output.index, sim_output['hiv.n_on_art'] / sim_output['hiv.n_diagnosed'], label='Modelled')
     ax[3, 0].set_title('ART coverage (%)')
-    ax[3, 0].plot(ART_coverages_df["Years"], ART_coverages_df["Value"], color='tab:red', label="Data")
+    ax[3, 0].scatter(ART_coverages_df["Years"], ART_coverages_df["Value"], color='tab:red', label="Data")
     ax[3, 0].legend()
     ax[3, 0].set_xlim([2000.0, max(sim_output.iloc[1:].index)])
 
     ax[3, 1].plot(sim_output.index, sim_output['hiv.n_on_art'], label='Modelled')
     ax[3, 1].set_title('Number of people on ART (in Mio)')
-    ax[3, 1].plot(ART_coverages_df_numbers["Years"], ART_coverages_df_numbers["Value"] * pop_scale, color='tab:red', label="Data")
+    ax[3, 1].scatter(ART_coverages_df_numbers["Years"], ART_coverages_df_numbers["Value"] * pop_scale, color='tab:red', label="Data")
     ax[3, 1].legend()
     ax[3, 1].set_ylabel('Mio.')
     ax[3, 1].yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f'{x * 1e-6:0.1f}'))
@@ -218,14 +224,13 @@ def plot_hiv(sim_output):
     # Yearly Tests
     #####################################################################################################################
     n_tests_data = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Optional indicators', skiprows=1).iloc[[1], 2:36]
-    # Remove nans:
     # Calculate yearly tests in the model:
     ax[4, 1].scatter(n_tests_data.columns, n_tests_data.values[0], color='tab:red', label='Data')
     sim_output['year'] = np.floor(np.round(sim_output.index, 1)).astype(int)
     # ax[4, 1].scatter(np.unique(sim_output['year']), sim_output.groupby(by='year')['fsw_testing.new_screens'].sum(), marker='o', label='FSW')
     # ax[4, 1].scatter(np.unique(sim_output['year']), sim_output.groupby(by='year')['other_testing.new_screens'].sum(), marker='o', label='General Population')
     # ax[4, 1].scatter(np.unique(sim_output['year']), sim_output.groupby(by='year')['low_cd4_testing.new_screens'].sum(), marker='o', label='CD4 count <200')
-    ax[4, 1].scatter(np.unique(sim_output['year']), sim_output.groupby(by='year')['low_cd4_testing.new_screens'].sum()
+    ax[4, 1].plot(np.unique(sim_output['year']), sim_output.groupby(by='year')['low_cd4_testing.new_screens'].sum()
                   + sim_output.groupby(by='year')['other_testing.new_screens'].sum()
                   + sim_output.groupby(by='year')['fsw_testing.new_screens'].sum(), label='FSW + Other + Low CD4 count testing')
     ax[4, 1].yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f'{x * 1e-6:0.1f}'))
@@ -244,12 +249,18 @@ def plot_hiv(sim_output):
     # Population
     #####################################################################################################################
     population_data = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Population size', skiprows=72).iloc[0:1, 3:36]
-    ax[5, 1].plot(np.arange(1990, 2022 + 1, 1), population_data.loc[0].values, color='tab:red', label='Data')
+    ax[5, 1].scatter(np.arange(1990, 2022 + 1, 1), population_data.loc[0].values, color='tab:red', label='Data')
     ax[5, 1].plot(sim_output.index, sim_output['n_alive'], label='Modelled')
     ax[5, 1].set_title('Population')
     ax[5, 1].yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f'{x * 1e-6:0.1f}'))
     ax[5, 1].set_ylabel('Mio.')
     ax[5, 1].legend()
+
+    #####################################################################################################################
+    # Syphilis Prevalence
+    #####################################################################################################################
+    ax[6, 0].plot(sim_output.index, 100 * sim_output['hiv.n_syphilis_inf']/sim_output['n_alive'], label='Syphilis prevalence')
+    ax[6, 0].set_title('Syphilis prevalence')
 
     fig.tight_layout()
     # plt.show()
@@ -350,7 +361,13 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
     hiv.pars['init_diagnosed'] = ss.bernoulli(p=0.15)  # Proportion of initially infected agents who start out as diagnosed
     hiv.pars['primary_acute_inf_dur'] = 2.9  # in months
     hiv.pars['transmission_sd'] = 0.0  # Standard Deviation of normal distribution for randomness in transmission.
-
+    hiv.pars['dist_sus_with_syphilis'] = ss.normal(loc=1.5, scale=0.25) # TODO Data?
+    hiv.pars['dist_trans_with_syphilis'] = ss.normal(loc=1.5, scale=0.025) # TODO Data? 
+    tivec = np.arange(start=1990, stop=2021 + 1 / 12, step=1 / 12)
+    hiv.pars['syphilis_prev'] = pd.DataFrame({"Years": tivec,
+                                             "Value": (np.interp(tivec,
+                                                         np.arange(1990, 2021+1, 1),
+                                                         np.repeat(0.05, len(np.arange(1990, 2021+1, 1)))))})
     ####################################################################################################################
     # Treatment Data
     ####################################################################################################################

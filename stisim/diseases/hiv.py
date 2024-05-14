@@ -17,6 +17,8 @@ class HIV(ss.Infection):
         # States
 
         self.add_states(
+            ss.BoolArr('syphilis_inf'),
+            ss.FloatArr('ti_syphilis_inf'),
             ss.BoolArr('on_art'),
             ss.FloatArr('art_transmission_reduction'),  # Reduction in transmission dependent on initial cd4 count
             ss.FloatArr('ti_art'),
@@ -36,7 +38,10 @@ class HIV(ss.Infection):
                                 cd4_rate=5,
                                 init_prev=0.03,
                                 init_diagnosed=ss.bernoulli(p=0.01),
+                                dist_sus_with_syphilis=ss.normal(loc=1.5, scale=0.25),
+                                dist_trans_with_syphilis=ss.normal(loc=1.2, scale=0.025),
                                 transmission_sd=0.025,
+                                syphilis_prev_df=None,
                                 primary_acute_inf_dur=1,  # in months
                                 art_efficacy=0.96,
                                 death_prob=0.05)
@@ -118,7 +123,7 @@ class HIV(ss.Infection):
                       (range(350, 500), 0.0 / 12),
                       (range(200, 350), 0.0 / 12),
                       (range(50, 200), 0.0 / 12),
-                      (range(0, 50), 0.3 / 12)]
+                      (range(0, 50), 0.323 / 12)]
         death_probs = [probs[1] for probs in death_data for cd4_count in self.cd4[uids] if int(cd4_count) in probs[0]]
         return death_probs
 
@@ -175,10 +180,34 @@ class HIV(ss.Infection):
 
         return
 
+    def update_syphilis_prev(self, sim):
+        """
+        When  using a connector to the syphilis module, this is not needed. The connector should update the syphilis-positive state.
+        """
+        # Get syphilis prevalence data
+        if len(self.pars.syphilis_prev[self.pars.syphilis_prev['Years'] == sim.year]['Value'].tolist()) > 0:
+            syphilis_prev = self.pars.syphilis_prev[self.pars.syphilis_prev['Years'] == sim.year]['Value'].tolist()[0]
+        else:
+            # If data is not available, grab the last one
+            syphilis_prev = self.pars.syphilis_prev.Value.iloc[-1]
+
+        current_syphilis_prev = len(self.syphilis_inf.uids)/len(sim.people.alive.uids)
+        syphilis_prev_change = syphilis_prev - current_syphilis_prev
+        # Infect proportion of agents with syphilis
+        uids_not_infected = (~self.syphilis_inf).uids
+        uids = uids_not_infected[ss.uids(np.random.random(len(uids_not_infected)) < syphilis_prev_change)]
+        self.syphilis_inf[uids] = True
+        self.ti_syphilis_inf[uids] = sim.ti
+
+
     def update_pre(self, sim):
         """
         Carry out autonomous updates at the start of the timestep (prior to transmission)
         """
+
+        # Update relative transmissibiltiy and susceptibility based on syphilis prevalence
+        self.update_syphilis_prev(sim)
+
         # Update cd4 start for new agents:
         self.update_cd4_starts()
 
@@ -188,6 +217,9 @@ class HIV(ss.Infection):
         # Update today's transmission
         self.update_transmission(sim)
 
+        # Update transmission and susceptibility for syphilis-positive agents
+        self.update_syphilis_trans_sus(sim)
+
         # Update today's deaths
         can_die = (sim.people.alive & sim.people.hiv.infected).uids
         hiv_deaths = self.pars.death_prob.filter(can_die)
@@ -195,6 +227,21 @@ class HIV(ss.Infection):
         sim.people.request_death(hiv_deaths)
         self.ti_dead[hiv_deaths] = sim.ti
 
+        return
+
+    def update_syphilis_trans_sus(self, sim):
+        """
+        Syphilis-positive agents are more likely to be susceptible to HIV and more likely to transmit HIV
+        """
+        # At each timestep, draw a relative susceptibility for syphilis positive agents from an input distribution.
+        # [The default relative transmission is 1].
+        new_syphilis_pos_uids = (self.syphilis_inf & (self.ti_syphilis_inf == sim.ti)).uids
+        self.rel_sus[new_syphilis_pos_uids] = self.pars.dist_sus_with_syphilis.rvs(len(new_syphilis_pos_uids))
+
+        # At each timestep, multiply the relative transmission of HIV and syphilis positive agents by a factor drawn from the input distribution
+        # to increase the relative transmission.
+        syphilis_hiv_pos_uids = (self.syphilis_inf & self.infected).uids
+        self.rel_trans[syphilis_hiv_pos_uids] = self.rel_trans[syphilis_hiv_pos_uids] * self.pars.dist_trans_with_syphilis.rvs(len(syphilis_hiv_pos_uids))
         return
 
     def update_cd4_counts(self, sim):
