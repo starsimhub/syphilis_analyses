@@ -7,6 +7,7 @@ import sciris as sc
 import starsim as ss
 import pandas as pd
 from collections import defaultdict
+from stisim import multisim as ssm
 
 __all__ = ['HIV']
 
@@ -15,7 +16,6 @@ class HIV(ss.Infection):
 
     def __init__(self, pars=None, par_dists=None, *args, **kwargs):
         # States
-
         self.add_states(
             ss.BoolArr('syphilis_inf'),
             ss.FloatArr('ti_syphilis_inf'),
@@ -44,6 +44,8 @@ class HIV(ss.Infection):
                                 syphilis_prev_df=None,
                                 primary_acute_inf_dur=1,  # in months
                                 art_efficacy=0.96,
+                                maternal_beta_pmtct_df=None,
+                                pmtct_coverages_df=None,
                                 death_prob=0.05)
 
         par_dists = ss.dictmergeleft(par_dists,
@@ -62,6 +64,7 @@ class HIV(ss.Infection):
         """
         super().initialize(sim)
         self.pars.transmission_timecourse = self.get_transmission_timecourse()
+        self.initial_hiv_maternal_beta = self.pars.beta['maternal'][0]
 
         return
 
@@ -220,6 +223,9 @@ class HIV(ss.Infection):
         # Update transmission and susceptibility for syphilis-positive agents
         self.update_syphilis_trans_sus(sim)
 
+        # Update MTCT - not needed anymore because of ART intervention??
+        # self.update_mtct(sim)
+
         # Update today's deaths
         can_die = (sim.people.alive & sim.people.hiv.infected).uids
         hiv_deaths = self.pars.death_prob.filter(can_die)
@@ -227,6 +233,22 @@ class HIV(ss.Infection):
         sim.people.request_death(hiv_deaths)
         self.ti_dead[hiv_deaths] = sim.ti
 
+        return
+
+    def update_mtct(self, sim):
+        """
+        Update mother-to-child-transmission according to the coverage of pregnant women who receive ARV for PMTCT
+        """
+        # Get this timestep's ma
+        if round(sim.year, 3) < round(self.pars.maternal_beta_pmtct_df['Years'].min(), 3):
+            maternal_beta_pmtct = self.pars.beta['maternal'][0]
+        elif round(sim.year, 3) > round(self.pars.maternal_beta_pmtct_df['Years'].max(), 3):
+            maternal_beta_pmtct = self.pars.maternal_beta_pmtct_df['Value'].iloc[-1]
+        else:
+            maternal_beta_pmtct = self.pars.maternal_beta_pmtct_df[round(self.pars.maternal_beta_pmtct_df['Years'], 3) == round(sim.year, 3)]['Value'].tolist()[0] #TODO find a better way for this
+
+        # Update beta layer for maternal network
+        self.pars.beta['maternal'][0] = 1-(1-maternal_beta_pmtct) ** (1/9)
         return
 
     def update_syphilis_trans_sus(self, sim):
@@ -255,7 +277,6 @@ class HIV(ss.Infection):
         duration_since_untreated = np.minimum(duration_since_untreated, len(self.pars.cd4_timecourse) - 1).astype(int)
         duration_since_onART = sim.ti - self.ti_art[infected_uids_onART]
 
-        # Assumption: Art impact increases linearly over 6 months
         duration_since_onART = np.minimum(duration_since_onART, 3 * 12)
 
         cd4_count_changes = np.diff(self.pars.cd4_timecourse)
@@ -330,6 +351,7 @@ class HIV(ss.Infection):
         self.results += ss.Result(self.name, 'cum_agents_on_art', sim.npts, dtype=float)
         self.results += ss.Result(self.name, 'prevalence_sw', sim.npts, dtype=float)
         self.results += ss.Result(self.name, 'prevalence_client', sim.npts, dtype=float)
+        self.results += ss.Result(self.name, 'n_on_art_pregnant', sim.npts, dtype=float)
 
         # Add FSW and clients to results:
         for risk_group in np.unique(sim.networks.structuredsexual.risk_group):
@@ -352,6 +374,7 @@ class HIV(ss.Infection):
         self.results['cum_diagnoses'][sim.ti] = np.sum(self.results['new_diagnoses'][:sim.ti + 1])
         self.results['new_agents_on_art'][sim.ti] = np.count_nonzero(self.ti_art == sim.ti) * sim.pars["pop_scale"]
         self.results['cum_agents_on_art'][sim.ti] = np.sum(self.results['new_agents_on_art'][:sim.ti + 1])
+        self.results['n_on_art_pregnant'][sim.ti] = np.count_nonzero(self.on_art & sim.people.pregnancy.pregnant) * sim.pars["pop_scale"]
 
         # Subset by FSW and client:
         fsw_infected = self.infected[sim.networks.structuredsexual.fsw]

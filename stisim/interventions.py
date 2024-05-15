@@ -204,6 +204,7 @@ class ART(ss.Intervention):
 
         pars = ss.dictmergeleft(pars,
                                 ART_coverages_df=None,
+                                ARV_coverages_df=None,
                                 duration_on_ART=ss.normal(loc=18, scale=5),
                                 art_efficacy=0.96)
 
@@ -235,13 +236,14 @@ class ART(ss.Intervention):
         Apply the ART intervention at each time step. Put agents on and off ART and adjust based on data.
         """
 
-        diagnosed = (sim.diseases[self.disease].ti_diagnosed == sim.ti).uids  # Uids of agents diagnosed in this time step
+        diagnosed = ((sim.diseases[self.disease].ti_diagnosed == sim.ti) & (~sim.people.pregnancy.pregnant.values)).uids  # Uids of non-pregnant agents diagnosed in this time step
 
         # Get the current ART coverage. If year is not available, assume 90%
         if len(self.pars.ART_coverages_df[self.pars.ART_coverages_df['Years'] == sim.year]['Value'].tolist()) > 0:
             ART_coverage_this_year = self.pars.ART_coverages_df[self.pars.ART_coverages_df['Years'] == sim.year]['Value'].tolist()[0]
         else:
             ART_coverage_this_year = self.pars.ART_coverages_df.Value.iloc[-1]  # Assume last coverage
+
         ART_coverage = ART_coverage_this_year
         # Schedule ART for a proportion of the newly diagnosed agents:
         diagnosed_to_start_ART = diagnosed[np.random.random(len(diagnosed)) < ART_coverage]
@@ -251,7 +253,9 @@ class ART(ss.Intervention):
         # Check who is stopping ART
         self.check_stop_ART_treatment(sim)
         # Apply correction to match ART coverage data:
-        self.ART_coverage_correction(sim, ART_coverage * len(sim.diseases[self.disease].diagnosed.uids))
+        self.ART_coverage_correction(sim, ART_coverage * len((sim.diseases[self.disease].diagnosed & (~sim.people.pregnancy.pregnant.values)).uids))
+        # Update ART for pregnant women
+        self.update_ART_pregnancies(sim)
 
         return
 
@@ -271,7 +275,16 @@ class ART(ss.Intervention):
         """
         Check who is stopping ART treatment and put them off ART
         """
-        stop_uids = self.check_uids(~sim.diseases[self.disease].on_art, sim.diseases[self.disease].ti_stop_art, sim.ti, filter_uids=None)
+        # Non-pregnant agents
+        stop_uids = self.check_uids(((~sim.diseases[self.disease].on_art) & (sim.people.pregnancy.pregnant.values)),
+                                    sim.diseases[self.disease].ti_stop_art, sim.ti, filter_uids=None)
+        sim.diseases[self.disease].on_art[stop_uids] = False
+        sim.diseases[self.disease].ti_art[stop_uids] = np.nan
+        sim.diseases[self.disease].ti_stop_art[stop_uids] = np.nan
+        sim.diseases[self.disease].ti_since_untreated[stop_uids] = sim.ti
+        # Pregnant agents
+        stop_uids = self.check_uids(((~sim.diseases[self.disease].on_art) & (~sim.people.pregnancy.pregnant.values)),
+                                    sim.diseases[self.disease].ti_stop_art, sim.ti, filter_uids=None)
         sim.diseases[self.disease].on_art[stop_uids] = False
         sim.diseases[self.disease].ti_art[stop_uids] = np.nan
         sim.diseases[self.disease].ti_stop_art[stop_uids] = np.nan
@@ -327,6 +340,25 @@ class ART(ss.Intervention):
             sim.diseases[self.disease].on_art[ss.uids(start_uids)] = True
             sim.diseases[self.disease].ti_art[ss.uids(start_uids)] = sim.ti
 
+        return
+
+    def update_ART_pregnancies(self, sim):
+        """
+        Start ART for proportion of pregnant women and put them off ART after 9 months
+        """
+        pregnant_uids = (sim.diseases[self.disease].infected & (sim.people.pregnancy.ti_pregnant == sim.ti)).uids
+
+        # Get the current ARV coverage.
+        if len(self.pars.ART_coverages_df[self.pars.ART_coverages_df['Years'] == sim.year]['Value'].tolist()) > 0:
+            ARV_coverage_this_year = self.pars.ART_coverages_df[self.pars.ART_coverages_df['Years'] == sim.year]['Value'].tolist()[0]
+        else:
+            ARV_coverage_this_year = self.pars.ART_coverages_df.Value.iloc[-1]  # Assume last coverage
+
+        pregnant_to_start_ART = pregnant_uids[np.random.random(len(pregnant_uids)) < ARV_coverage_this_year]
+        sim.diseases[self.disease].on_art[pregnant_to_start_ART] = True
+        sim.diseases[self.disease].ti_art[pregnant_to_start_ART] = sim.ti
+        # Determine when agents goes off ART:
+        sim.diseases[self.disease].ti_stop_art[pregnant_to_start_ART] = sim.ti + 9 # Put them off ART in 9 months
         return
 
 
@@ -385,6 +417,8 @@ class validate_ART(ss.Intervention):
                 sim.diseases[self.disease].ti_infected[ss.uids(uid)] = sim.ti
                 sim.diseases[self.disease].ti_since_untreated[ss.uids(uid)] = sim.ti
                 sim.diseases[self.disease].susceptible[ss.uids(uid)] = False
+                #sim.diseases[self.disease].syphilis_inf[ss.uids(uid)] = True
+                #sim.diseases[self.disease].ti_syphilis_inf[ss.uids(uid)] = sim.ti
 
                 # if self.stop_ART:
                 #    sim.diseases[self.disease].ti_stop_art[uid] = sim.ti + sim.diseases[self.disease].pars.avg_duration_stop_ART
