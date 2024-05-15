@@ -14,7 +14,30 @@ __all__ = ['HIV']
 
 class HIV(ss.Infection):
 
-    def __init__(self, pars=None, par_dists=None, *args, **kwargs):
+    def __init__(self, pars=None, **kwargs):
+        super().__init__()
+
+        # Parameters
+        self.default_pars(
+            cd4_start_dist=ss.normal(loc=500, scale=1),
+            cd4_min=100,
+            cd4_max=500,
+            cd4_rate=5,
+            init_prev=0.03,
+            init_diagnosed=ss.bernoulli(p=0.01),
+            dist_sus_with_syphilis=ss.normal(loc=1.5, scale=0.25),
+            dist_trans_with_syphilis=ss.normal(loc=1.2, scale=0.025),
+            transmission_sd=0.025,
+            syphilis_prev_df=None,
+            primary_acute_inf_dur=1,  # in months
+            art_efficacy=0.96,
+            maternal_beta_pmtct_df=None,
+            pmtct_coverages_df=None,
+            death_prob=ss.bernoulli(0.05)
+        )
+
+        self.update_pars(pars, **kwargs)
+
         # States
         self.add_states(
             ss.BoolArr('syphilis_inf'),
@@ -30,35 +53,14 @@ class HIV(ss.Infection):
             ss.FloatArr('ti_diagnosed'),
             ss.FloatArr('ti_since_untreated')  # This is needed for agents who start, stop and restart ART
         )
-        # Default parameters
-        pars = ss.dictmergeleft(pars,
-                                cd4_start_dist=ss.normal(loc=500, scale=1),
-                                cd4_min=100,
-                                cd4_max=500,
-                                cd4_rate=5,
-                                init_prev=0.03,
-                                init_diagnosed=ss.bernoulli(p=0.01),
-                                dist_sus_with_syphilis=ss.normal(loc=1.5, scale=0.25),
-                                dist_trans_with_syphilis=ss.normal(loc=1.2, scale=0.025),
-                                transmission_sd=0.025,
-                                syphilis_prev_df=None,
-                                primary_acute_inf_dur=1,  # in months
-                                art_efficacy=0.96,
-                                maternal_beta_pmtct_df=None,
-                                pmtct_coverages_df=None,
-                                death_prob=0.05)
 
-        par_dists = ss.dictmergeleft(par_dists,
-                                     death_prob=ss.bernoulli)
-
-        super().__init__(pars=pars, par_dists=par_dists, *args, **kwargs)
         self.death_prob_data = sc.dcp(self.pars.death_prob)
         self.pars.death_prob = self.make_death_prob
         self._pending_ARTtreatment = defaultdict(list)
 
         return
 
-    def initialize(self, sim=None):
+    def initialize(self, sim):
         """
         Initialize
         """
@@ -68,8 +70,9 @@ class HIV(ss.Infection):
 
         return
 
-    def set_initial_states(self, sim):
-        alive_uids = sim.people.alive.uids
+    def set_initial_states(self):
+        ti = self.sim.ti
+        alive_uids = self.sim.people.alive.uids
         initial_cases = self.pars.init_prev.filter(alive_uids)
         initial_cases_diagnosed = self.pars.init_diagnosed.filter(initial_cases)
         self.susceptible[initial_cases] = False
@@ -82,7 +85,7 @@ class HIV(ss.Infection):
 
         # Update CD4 counts for initial cases
         self.pars.viral_timecourse, self.pars.cd4_timecourse = self.get_viral_dynamics_timecourses()
-        duration_since_untreated = sim.ti - self.ti_since_untreated[initial_cases]
+        duration_since_untreated = ti - self.ti_since_untreated[initial_cases]
         duration_since_untreated = np.minimum(duration_since_untreated, len(self.pars.cd4_timecourse) - 1).astype(int)
         self.cd4_start[initial_cases] = self.pars.cd4_start_dist.rvs(len(initial_cases)) #TODO update to positive normal distribution
         self.cd4[initial_cases] = self.cd4_start[initial_cases] * self.pars.cd4_timecourse[duration_since_untreated]
@@ -91,7 +94,7 @@ class HIV(ss.Infection):
         # Assumption: Transmission is at 1 for agents with cd4 count >200, else at 6
         self.pars.transmission_timecourse = self.get_transmission_timecourse()
         self.rel_trans[initial_cases] = 1
-        duration_since_infection = sim.ti - self.ti_infected[initial_cases]
+        duration_since_infection = ti - self.ti_infected[initial_cases]
         duration_since_infection = np.minimum(duration_since_infection, len(self.pars.cd4_timecourse) - 1).astype(int)
         duration_since_infection_transmission = np.minimum(duration_since_infection, len(self.pars.transmission_timecourse) - 1).astype(int)
 
@@ -118,7 +121,7 @@ class HIV(ss.Infection):
         return self.infectious
 
     @staticmethod
-    def make_death_prob(self, sim, uids):
+    def make_death_prob(self, uids):
         """
         Death probabilities dependent on cd4 counts
         """
@@ -183,10 +186,11 @@ class HIV(ss.Infection):
 
         return
 
-    def update_syphilis_prev(self, sim):
+    def update_syphilis_prev(self):
         """
         When  using a connector to the syphilis module, this is not needed. The connector should update the syphilis-positive state.
         """
+        sim = self.sim
         # Get syphilis prevalence data
         if len(self.pars.syphilis_prev[self.pars.syphilis_prev['Years'] == sim.year]['Value'].tolist()) > 0:
             syphilis_prev = self.pars.syphilis_prev[self.pars.syphilis_prev['Years'] == sim.year]['Value'].tolist()[0]
@@ -203,35 +207,35 @@ class HIV(ss.Infection):
         self.ti_syphilis_inf[uids] = sim.ti
 
 
-    def update_pre(self, sim):
+    def update_pre(self):
         """
         Carry out autonomous updates at the start of the timestep (prior to transmission)
         """
 
         # Update relative transmissibiltiy and susceptibility based on syphilis prevalence
-        self.update_syphilis_prev(sim)
+        self.update_syphilis_prev()
 
         # Update cd4 start for new agents:
         self.update_cd4_starts()
 
         # Update cd4 counts:
-        self.update_cd4_counts(sim)
+        self.update_cd4_counts()
 
         # Update today's transmission
-        self.update_transmission(sim)
+        self.update_transmission()
 
         # Update transmission and susceptibility for syphilis-positive agents
-        self.update_syphilis_trans_sus(sim)
+        self.update_syphilis_trans_sus()
 
         # Update MTCT - not needed anymore because of ART intervention??
         # self.update_mtct(sim)
 
         # Update today's deaths
-        can_die = (sim.people.alive & sim.people.hiv.infected).uids
+        can_die = (self.sim.people.alive & self.sim.people.hiv.infected).uids
         hiv_deaths = self.pars.death_prob.filter(can_die)
 
-        sim.people.request_death(hiv_deaths)
-        self.ti_dead[hiv_deaths] = sim.ti
+        self.sim.people.request_death(hiv_deaths)
+        self.ti_dead[hiv_deaths] = self.sim.ti
 
         return
 
@@ -251,13 +255,14 @@ class HIV(ss.Infection):
         self.pars.beta['maternal'][0] = 1-(1-maternal_beta_pmtct) ** (1/9)
         return
 
-    def update_syphilis_trans_sus(self, sim):
+    def update_syphilis_trans_sus(self):
         """
         Syphilis-positive agents are more likely to be susceptible to HIV and more likely to transmit HIV
         """
+        ti = self.sim.ti
         # At each timestep, draw a relative susceptibility for syphilis positive agents from an input distribution.
         # [The default relative transmission is 1].
-        new_syphilis_pos_uids = (self.syphilis_inf & (self.ti_syphilis_inf == sim.ti)).uids
+        new_syphilis_pos_uids = (self.syphilis_inf & (self.ti_syphilis_inf == ti)).uids
         self.rel_sus[new_syphilis_pos_uids] = self.pars.dist_sus_with_syphilis.rvs(len(new_syphilis_pos_uids))
 
         # At each timestep, multiply the relative transmission of HIV and syphilis positive agents by a factor drawn from the input distribution
@@ -266,10 +271,11 @@ class HIV(ss.Infection):
         self.rel_trans[syphilis_hiv_pos_uids] = self.rel_trans[syphilis_hiv_pos_uids] * self.pars.dist_trans_with_syphilis.rvs(len(syphilis_hiv_pos_uids))
         return
 
-    def update_cd4_counts(self, sim):
+    def update_cd4_counts(self):
         """
         Update today's CD4 counts
         """
+        sim = self.sim
         infected_uids_onART = sim.people.alive & self.infected & self.on_art
         infected_uids_not_onART = sim.people.alive & self.infected & ~self.on_art
 
@@ -291,10 +297,11 @@ class HIV(ss.Infection):
 
         return
 
-    def update_transmission(self, sim):
+    def update_transmission(self):
         """
         Update today's transmission
         """
+        sim = self.sim
         infected_uids_onART = sim.people.alive & self.infected & self.on_art
         infected_uids_not_onART = sim.people.alive & self.infected & ~self.on_art
 
@@ -338,79 +345,81 @@ class HIV(ss.Infection):
         self.art_transmission_reduction[start_onART_uids] = (self.rel_trans[start_onART_uids] - (1 - self.pars.art_efficacy)) / 6
         return
 
-    def init_results(self, sim):
+    def init_results(self):
         """
         Initialize results
         """
-        super().init_results(sim)
-        self.results += ss.Result(self.name, 'new_deaths', sim.npts, dtype=int)
-        self.results += ss.Result(self.name, 'cum_deaths', sim.npts, dtype=int)
-        self.results += ss.Result(self.name, 'new_diagnoses', sim.npts, dtype=int)
-        self.results += ss.Result(self.name, 'cum_diagnoses', sim.npts, dtype=int)
-        self.results += ss.Result(self.name, 'new_agents_on_art', sim.npts, dtype=float)
-        self.results += ss.Result(self.name, 'cum_agents_on_art', sim.npts, dtype=float)
-        self.results += ss.Result(self.name, 'prevalence_sw', sim.npts, dtype=float)
-        self.results += ss.Result(self.name, 'prevalence_client', sim.npts, dtype=float)
-        self.results += ss.Result(self.name, 'n_on_art_pregnant', sim.npts, dtype=float)
+        super().init_results()
+        npts = self.sim.npts
+        self.results += ss.Result(self.name, 'new_deaths', npts, dtype=int, scale=True)
+        self.results += ss.Result(self.name, 'cum_deaths', npts, dtype=int, scale=True)
+        self.results += ss.Result(self.name, 'new_diagnoses', npts, dtype=int, scale=True)
+        self.results += ss.Result(self.name, 'cum_diagnoses', npts, dtype=int, scale=True)
+        self.results += ss.Result(self.name, 'new_agents_on_art', npts, dtype=float, scale=True)
+        self.results += ss.Result(self.name, 'cum_agents_on_art', npts, dtype=float, scale=True)
+        self.results += ss.Result(self.name, 'prevalence_sw', npts, dtype=float)
+        self.results += ss.Result(self.name, 'prevalence_client', npts, dtype=float)
+        self.results += ss.Result(self.name, 'n_on_art_pregnant', npts, dtype=float, scale=True)
 
         # Add FSW and clients to results:
-        for risk_group in np.unique(sim.networks.structuredsexual.risk_group):
+        for risk_group in range(self.sim.networks.structuredsexual.pars.n_risk_groups):
             for sex in ['f', 'm']:
-                self.results += ss.Result(self.name, 'prevalence_risk_group_' + str(risk_group) + '_' + sex, sim.npts,
+                self.results += ss.Result(self.name, 'prevalence_risk_group_' + str(risk_group) + '_' + sex, npts,
                                           dtype=float)
                 self.results += ss.Result(self.name, 'new_infections_risk_group_' + str(risk_group) + '_' + sex,
-                                          sim.npts, dtype=float)
+                                          npts, dtype=float)
 
         return
 
-    def update_results(self, sim):
+    def update_results(self):
         """
         Update results at each time step
         """
-        super().update_results(sim)
-        self.results['new_deaths'][sim.ti] = np.count_nonzero(self.ti_dead == sim.ti) * sim.pars["pop_scale"]
-        self.results['cum_deaths'][sim.ti] = np.sum(self.results['new_deaths'][:sim.ti + 1])
-        self.results['new_diagnoses'][sim.ti] = np.count_nonzero(self.ti_diagnosed == sim.ti) * sim.pars["pop_scale"]
-        self.results['cum_diagnoses'][sim.ti] = np.sum(self.results['new_diagnoses'][:sim.ti + 1])
-        self.results['new_agents_on_art'][sim.ti] = np.count_nonzero(self.ti_art == sim.ti) * sim.pars["pop_scale"]
-        self.results['cum_agents_on_art'][sim.ti] = np.sum(self.results['new_agents_on_art'][:sim.ti + 1])
-        self.results['n_on_art_pregnant'][sim.ti] = np.count_nonzero(self.on_art & sim.people.pregnancy.pregnant) * sim.pars["pop_scale"]
+        super().update_results()
+        ti = self.tim.ti
+        self.results['new_deaths'][ti] = np.count_nonzero(self.ti_dead == ti)
+        self.results['cum_deaths'][ti] = np.sum(self.results['new_deaths'][:ti + 1])
+        self.results['new_diagnoses'][ti] = np.count_nonzero(self.ti_diagnosed == ti)
+        self.results['cum_diagnoses'][ti] = np.sum(self.results['new_diagnoses'][:ti + 1])
+        self.results['new_agents_on_art'][ti] = np.count_nonzero(self.ti_art == ti)
+        self.results['cum_agents_on_art'][ti] = np.sum(self.results['new_agents_on_art'][:ti + 1])
+        self.results['n_on_art_pregnant'][ti] = np.count_nonzero(self.on_art & self.sim.people.pregnancy.pregnant)
 
         # Subset by FSW and client:
-        fsw_infected = self.infected[sim.networks.structuredsexual.fsw]
-        client_infected = self.infected[sim.networks.structuredsexual.client]
-        for risk_group in np.unique(sim.networks.structuredsexual.risk_group):
+        fsw_infected = self.infected[self.sim.networks.structuredsexual.fsw]
+        client_infected = self.infected[self.sim.networks.structuredsexual.client]
+        for risk_group in np.unique(self.sim.networks.structuredsexual.risk_group):
             for sex in ['f', 'm']:
-                risk_group_infected = self.infected[(sim.networks.structuredsexual.risk_group == risk_group) & (sim.people[sex])]
-                self.results['prevalence_risk_group_' + str(risk_group) + '_' + sex][sim.ti] = sum(risk_group_infected) / len(risk_group_infected)
-                self.results['new_infections_risk_group_' + str(risk_group) + '_' + sex][sim.ti] = sum(risk_group_infected) / len(risk_group_infected)
+                risk_group_infected = self.infected[(self.sim.networks.structuredsexual.risk_group == risk_group) & (self.sim.people[sex])]
+                self.results['prevalence_risk_group_' + str(risk_group) + '_' + sex][ti] = sum(risk_group_infected) / len(risk_group_infected)
+                self.results['new_infections_risk_group_' + str(risk_group) + '_' + sex][ti] = sum(risk_group_infected) / len(risk_group_infected)
 
         # Add FSW and clients to results:
-        self.results['prevalence_sw'][sim.ti] = sum(fsw_infected) / len(fsw_infected)
-        self.results['prevalence_client'][sim.ti] = sum(client_infected) / len(client_infected)
+        self.results['prevalence_sw'][ti] = sum(fsw_infected) / len(fsw_infected)
+        self.results['prevalence_client'][ti] = sum(client_infected) / len(client_infected)
 
         return
 
-    def make_new_cases(self, sim):
+    def make_new_cases(self):
         """
         Add new HIV cases
         """
-        # eff_condoms = sim.pars[self.name]['eff_condoms'] # TODO figure out how to add this
-        super().make_new_cases(sim)
+        super().make_new_cases()
         return
 
-    def set_prognoses(self, sim, uids, source_uids=None):
+    def set_prognoses(self, uids, source_uids=None):
         """
         Set prognoses upon infection
         """
-        super().set_prognoses(sim, uids, source_uids)
+        super().set_prognoses(uids, source_uids)
+        ti = self.sim.ti
 
         self.susceptible[uids] = False
         self.infected[uids] = True
-        self.ti_infected[uids] = sim.ti
-        self.ti_since_untreated[uids] = sim.ti
+        self.ti_infected[uids] = ti
+        self.ti_since_untreated[uids] = ti
 
         return
 
-    def set_congenital(self, sim, target_uids, source_uids):
-        return self.set_prognoses(sim, target_uids, source_uids)
+    def set_congenital(self, target_uids, source_uids):
+        return self.set_prognoses(target_uids, source_uids)

@@ -119,7 +119,7 @@ class BaseTest(ss.Intervention):
     '''
 
     def __init__(self, product=None, prob=None, eligibility=None, disease=None, **kwargs):
-        ss.Intervention.__init__(self, **kwargs)
+        super().__init__(self, **kwargs)
 
         self.prob = sc.promotetoarray(prob)
         self.eligibility = eligibility
@@ -148,17 +148,18 @@ class BaseTest(ss.Intervention):
         return
 
     def initialize(self, sim):
-        ss.Intervention.initialize(self, sim)
-        self.init_results(sim)
-        self.npts = sim.npts
+        super().initialize(sim)
+        self.init_results()
+        self.npts = self.sim.npts
         # self.n_products_used = ss.Result(name=f'Products administered by {self.label}', npts=sim.npts, scale=True)
         self.outcomes = {k: np.array([], dtype=np.int64) for k in self.product.hierarchy}
         return
 
-    def init_results(self, sim):
+    def init_results(self):
+        npts = self.sim.npts
         self.results += [
-            ss.Result(self.name, 'new_screened', sim.npts, dtype=float, scale=True),
-            ss.Result(self.name, 'new_screens', sim.npts, dtype=int, scale=True)]
+            ss.Result(self.name, 'new_screened', npts, dtype=float, scale=True),
+            ss.Result(self.name, 'new_screens', npts, dtype=int, scale=True)]
 
         return
 
@@ -206,15 +207,17 @@ class ART(ss.Intervention):
     ART-treatment intervention by Robyn Stuart, Daniel Klein and Cliff Kerr, edited by Alina Muellenmeister
     """
 
-    def __init__(self, pars=None, par_dists=None, *args, **kwargs):
+    def __init__(self, pars=None, **kwargs):
 
-        pars = ss.dictmergeleft(pars,
-                                ART_coverages_df=None,
-                                ARV_coverages_df=None,
-                                duration_on_ART=ss.normal(loc=18, scale=5),
-                                art_efficacy=0.96)
+        super().__init__()
+        self.default_pars(
+            ART_coverages_df=None,
+            ARV_coverages_df=None,
+            duration_on_ART=ss.normal(loc=18, scale=5),
+            art_efficacy=0.96
+            )
+        self.update_pars(pars, **kwargs)
 
-        super().__init__(pars=pars, par_dists=par_dists, *args, **kwargs)
         self._pending_ART = defaultdict(list)
         self.disease = 'hiv'
         return
@@ -373,10 +376,7 @@ class DualTest(ss.Intervention):
     def __init__(self, pars=None):
         return
 
-    def initialize(self, sim):
-        return
-
-    def apply(self, sim):
+    def apply(self):
         return
 
 
@@ -407,11 +407,12 @@ class validate_ART(ss.Intervention):
     def initialize(self, sim):
         super().initialize(sim)
         self.results = ss.ndict()
+        npts = self.sim.npts
         for index, uid in enumerate(self.uids):
-            self.results += ss.Result(self.name, 'status_' + str(uid), sim.npts, dtype=np.dtype(('U', 10)))
-            self.results += ss.Result(self.name, 'ART_status_' + str(uid), sim.npts, dtype=np.dtype(('U', 10)))
-            self.results += ss.Result(self.name, 'cd4_count_' + str(uid), sim.npts, dtype=float, scale=False)
-            self.results += ss.Result(self.name, 'transmission_' + str(uid), sim.npts, dtype=float, scale=False)
+            self.results += ss.Result(self.name, 'status_' + str(uid), npts, dtype=np.dtype(('U', 10)))
+            self.results += ss.Result(self.name, 'ART_status_' + str(uid), npts, dtype=np.dtype(('U', 10)))
+            self.results += ss.Result(self.name, 'cd4_count_' + str(uid), npts, dtype=float, scale=False)
+            self.results += ss.Result(self.name, 'transmission_' + str(uid), npts, dtype=float, scale=False)
 
         return
 
