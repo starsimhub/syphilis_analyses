@@ -1,15 +1,18 @@
 """
-Define interventions (and analyzers)
+Define interventions for STIsim
 """
 
 import starsim as ss
-import sciris as sc
 import numpy as np
 import pandas as pd
 from collections import defaultdict
-import pylab as pl
-import inspect
+import sciris as sc
 
+
+__all__ = []
+
+
+# %% Helper functions
 
 def find_timepoint(arr, t=None, interv=None, sim=None, which='first'):
     '''
@@ -98,7 +101,9 @@ def get_subtargets(subtarget, sim):
     return subtarget_inds, subtarget_vals
 
 
-__all__ = ['BaseTest']
+# %% Custom interventions
+
+__all__ += ['BaseTest', 'ART', 'DualTest']
 
 
 class BaseTest(ss.Intervention):
@@ -194,6 +199,7 @@ class BaseTest(ss.Intervention):
 
     def check_eligibility(self, sim):
         return self.eligibility(sim).uids
+
 
 class ART(ss.Intervention):
     """
@@ -362,7 +368,20 @@ class ART(ss.Intervention):
         return
 
 
-# %% Custom Interventions
+class DualTest(ss.Intervention):
+    """ Dial test for diagnosing HIV and syphilis """
+    def __init__(self, pars=None):
+        return
+
+    def initialize(self, sim):
+        return
+
+    def apply(self, sim):
+        return
+
+
+# %% Validation and other checks -- TODO, should this be an analyzer?
+
 __all__ += ['validate_ART']
 
 
