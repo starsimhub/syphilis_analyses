@@ -16,6 +16,9 @@ import pandas as pd
 
 ss_float_ = ss.dtypes.float
 
+# Specify all externally visible functions this file defines; see also more definitions below
+__all__ = ['StructuredSexual']
+
 
 class StructuredSexual(ss.SexualNetwork):
     """

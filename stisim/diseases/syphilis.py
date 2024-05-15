@@ -27,14 +27,13 @@ class Syphilis(ss.Infection):
             time_to_death = ss.lognorm_ex(mean=5, stdev=5),  # Time to death
 
             # Transmission by stage
-            rel_trans = dict(
-                exposed=1,
-                primary=1,
-                secondary=1,
-                latent=0.1,  # Baseline level; this decays exponentially with duration of latent infection
-                tertiary=0.0,
-            ),
-            rel_trans_latent_half_life = 10,
+            beta=1.0,  # Placeholder
+            rel_trans_exposed=1,
+            rel_trans_primary=1,
+            rel_trans_secondary=1,
+            rel_trans_latent=0.1,  # Baseline level; this decays exponentially with duration of latent infection
+            rel_trans_tertiary=0.0,
+            rel_trans_latent_half_life=10,
 
             # Congenital syphilis outcomes
             # Birth outcomes coded as:
@@ -124,7 +123,7 @@ class Syphilis(ss.Infection):
         primary = self.exposed & (self.ti_primary <= ti)
         self.primary[primary] = True
         self.exposed[primary] = False
-        self.rel_trans[self.primary] = self.pars.rel_trans['primary']
+        self.rel_trans[self.primary] = self.pars.rel_trans_primary
 
         # Secondary from primary
         secondary_from_primary = self.primary & (self.ti_secondary <= ti)
@@ -144,7 +143,7 @@ class Syphilis(ss.Infection):
             self.set_secondary_prognoses(secondary_from_latent.uids)
 
         # Secondary rel_trans
-        self.rel_trans[self.secondary] = self.pars.rel_trans['secondary']
+        self.rel_trans[self.secondary] = self.pars.rel_trans_secondary
 
         # Latent
         latent = self.secondary & (self.ti_latent <= ti)
@@ -161,7 +160,7 @@ class Syphilis(ss.Infection):
         tertiary = self.latent & (self.ti_tertiary <= ti)
         self.tertiary[tertiary] = True
         self.latent[tertiary] = False
-        self.rel_trans[tertiary] = self.pars.rel_trans['tertiary']
+        self.rel_trans[tertiary] = self.pars.rel_trans_tertiary
 
         # Trigger deaths
         deaths = (self.ti_dead <= ti).uids
@@ -195,7 +194,7 @@ class Syphilis(ss.Infection):
         dur_latent = ti - self.ti_latent[self.latent]
         hl = self.pars.rel_trans_latent_half_life
         decay_rate = np.log(2) / hl if ~np.isnan(hl) else 0.
-        latent_trans = self.pars.rel_trans['latent'] * np.exp(-decay_rate * dur_latent*dt)
+        latent_trans = self.pars.rel_trans_latent * np.exp(-decay_rate * dur_latent*dt)
         self.rel_trans[self.latent] = latent_trans
         return
 
