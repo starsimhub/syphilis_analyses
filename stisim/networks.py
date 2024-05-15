@@ -122,8 +122,7 @@ class StructuredSexual(ss.SexualNetwork):
                 age_conds = (sim.people.age[uids] >= a_range[0]) & (sim.people.age[uids] < a_range[1])
                 f_el_bools = age_conds & (module.risk_group[uids] == rg) & sim.people.female[uids]
                 f_el_uids = ss.uids(f_el_bools)
-                # f_el_uids = uids[f_el_bools.nonzero()[0]]  # FIX THIS
-                loc[f_el_uids] = module.pars[par][a_label][rg][0]
+                f_el_uids = uids[f_el_bools.nonzero()[0]]  # FIX THIS
                 scale[f_el_uids] = module.pars[par][a_label][rg][1]
         return loc, scale
 
