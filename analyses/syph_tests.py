@@ -108,10 +108,7 @@ class SymptomaticTesting(BaseTest):
                         if sw:
                             if sex == 'female': conditions = conditions & sim.networks.structuredsexual.fsw
                             if sex == 'male':   conditions = conditions & sim.networks.structuredsexual.client
-                        try:
-                            test_prob[conditions[uids]] = thisdf.symp_test_prob.values[0]
-                        except:
-                            import traceback; traceback.print_exc(); import pdb; pdb.set_trace()
+                        test_prob[conditions[uids]] = thisdf.symp_test_prob.values[0]
 
         # Scale and validate
         test_prob = test_prob * self.pars.rel_test * sim.dt
