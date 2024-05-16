@@ -10,9 +10,10 @@ import matplotlib.pyplot as plt
 import sciris as sc
 from stisim.networks import StructuredSexual
 from stisim.diseases.syphilis import Syphilis
+from syph_tests import SymptomaticTesting
 
-quick_run = False
-ss.options['multirng']=False
+
+quick_run = True
 
 
 def make_syph_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, latent_trans=0.075):
@@ -20,7 +21,7 @@ def make_syph_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, late
     syph = Syphilis()
     syph.pars['beta'] = {'structuredsexual': [0.5, 0.25], 'maternal': [0.99, 0]}
     syph.pars['init_prev'] = ss.bernoulli(p=0.1)
-    syph.pars['rel_trans']['latent'] = latent_trans
+    syph.pars['rel_trans_latent'] = latent_trans
 
     # Make demographic modules
     fertility_rates = {'fertility_rate': pd.read_csv(f'data/{location}_asfr.csv')}
@@ -51,7 +52,9 @@ def make_syph_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, late
 def run_syph(location='zimbabwe', total_pop=100e6, dt=1.0, n_agents=500):
 
     sim_kwargs = make_syph_sim(location=location, total_pop=total_pop, dt=dt, n_agents=n_agents)
-    sim = ss.Sim(**sim_kwargs)
+    test_prob_data = pd.read_csv('data/symp_test_prob.csv')
+    interventions = SymptomaticTesting(product='rst', test_prob_data=test_prob_data)
+    sim = ss.Sim(interventions=interventions, **sim_kwargs)
     sim.run()
 
     return sim
@@ -159,12 +162,14 @@ if __name__ == '__main__':
         nigeria=93963392,
         zimbabwe=9980999,
     )[location]
-    sim = run_syph(location=location, total_pop=total_pop, dt=1/12, n_agents=int(10e3))
-    sc.saveobj(f'sim_{location}.obj', sim)
 
-    plot_degree(sim)
-    plot_mixing(sim)
-    plot_syph(sim)
+
+    sim = run_syph(location=location, total_pop=total_pop, dt=1/12, n_agents=1000)
+
+    # sc.saveobj(f'sim_{location}.obj', sim)
+    # plot_degree(sim)
+    # plot_mixing(sim)
+    # plot_syph(sim)
 
     # sim = sc.loadobj('sim.obj')
 
