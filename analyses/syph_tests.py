@@ -67,6 +67,13 @@ class SymptomaticTesting(BaseTest):
 
         return
 
+    def check_eligibility(self, sim):
+        conditions = sim.diseases.syphilis.active
+        if self.eligibility is not None:
+            other_eligible  = sc.promotetoarray(self.eligibility(sim)) # Apply any other user-defined eligibility
+            conditions      = conditions & other_eligible
+        return conditions
+
     def initialize(self, sim):
         super().initialize(sim)
         self.outcomes = {k: np.array([], dtype=int) for k in self.product.hierarchy}
