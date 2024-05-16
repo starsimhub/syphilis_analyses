@@ -72,7 +72,7 @@ class SymptomaticTesting(BaseTest):
         if self.eligibility is not None:
             other_eligible  = sc.promotetoarray(self.eligibility(sim)) # Apply any other user-defined eligibility
             conditions      = conditions & other_eligible
-        return conditions
+        return conditions.uids
 
     def initialize(self, sim):
         super().initialize(sim)
