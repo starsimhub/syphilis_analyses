@@ -159,12 +159,12 @@ def plot_hiv(sim_output):
     ax[2, 0].plot(sim_output.index, sim_output['hiv.prevalence_client'] * 100, label='Client')
     ax[2, 0].legend()
 
-    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_0.0_f'] * 100, color='tab:blue', label='Risk Group 0 - Female')
-    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_1.0_f'] * 100, color='tab:green', label='Risk Group 1- Female')
-    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_2.0_f'] * 100, color='tab:orange', label='Risk Group 2- Female')
-    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_0.0_m'] * 100, color='tab:blue', linestyle='--', label='Risk Group 0 - Male')
-    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_1.0_m'] * 100, color='tab:green', linestyle='--', label='Risk Group 1- Male')
-    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_2.0_m'] * 100, color='tab:orange', linestyle='--', label='Risk Group 2- Male')
+    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_0_female'] * 100, color='tab:blue', label='Risk Group 0 - Female')
+    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_1_female'] * 100, color='tab:green', label='Risk Group 1- Female')
+    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_2_female'] * 100, color='tab:orange', label='Risk Group 2- Female')
+    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_0_male'] * 100, color='tab:blue', linestyle='--', label='Risk Group 0 - Male')
+    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_1_male'] * 100, color='tab:green', linestyle='--', label='Risk Group 1- Male')
+    ax[2, 1].plot(sim_output.index, sim_output['hiv.prevalence_risk_group_2_male'] * 100, color='tab:orange', linestyle='--', label='Risk Group 2- Male')
     blue_patch = mpatches.Patch(color='tab:blue', label='Risk Group 0')
     green_patch = mpatches.Patch(color='tab:green', label='Risk Group 1')
     orange_patch = mpatches.Patch(color='tab:orange', label='Risk Group 2')
@@ -355,8 +355,8 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
     # HIV Params
     ####################################################################################################################
     hiv = HIV()
-    hiv.pars['beta'] = {'structuredsexual': [0.95, 0.95], 'maternal': [0.08, 0.5]}
-    hiv.pars['init_prev'] = ss.bernoulli(p=0.15)
+    hiv.pars['beta'] = {'structuredsexual': [0.95, 0.95], 'maternal': [0.95, 0.]}
+    hiv.pars['init_prev'] = ss.bernoulli(p=0.15) #ss.bernoulli(p=0.15)
     hiv.pars['cd4_start_dist'] = ss.normal(loc=800, scale=10)
     hiv.pars['init_diagnosed'] = ss.bernoulli(p=0.15)  # Proportion of initially infected agents who start out as diagnosed
     hiv.pars['primary_acute_inf_dur'] = 2.9  # in months

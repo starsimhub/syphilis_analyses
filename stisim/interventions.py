@@ -368,6 +368,8 @@ class ART(ss.Intervention):
         sim.diseases[self.disease].ti_art[pregnant_to_start_ART] = sim.ti
         # Determine when agents goes off ART:
         sim.diseases[self.disease].ti_stop_art[pregnant_to_start_ART] = sim.ti + 9 # Put them off ART in 9 months
+
+        # TODO decrease susceptibility for unborn infants
         return
 
 
