@@ -13,7 +13,7 @@ __all__ = ['DualTest', 'test_ART']
 
 
 class DualTest(ss.Intervention):
-    """ Dial test for diagnosing HIV and syphilis """
+    """ Dual test for diagnosing HIV and syphilis """
     def __init__(self, pars=None):
         return
 
