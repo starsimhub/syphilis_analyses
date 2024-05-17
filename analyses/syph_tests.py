@@ -196,11 +196,19 @@ class LinkedNewbornTesting(BaseTest):
     def apply(self, sim):
         queue = sim.interventions.anctesting.newborn_queue
         time_to_test = sc.findinds(queue.ti_births, sim.ti)
+
+        # Attempt to test newborns
         if len(time_to_test)>0:
             eligible_uids = np.array(queue.uids)[time_to_test]
             accept_uids = self.test_prob.filter(eligible_uids)
             if len(accept_uids):
                 self.outcomes = self.product.administer(sim, accept_uids)
+
+            # Remove newborns from the testing queue
+            for key in queue.keys():
+                new_queue_entry = [val for i,val in enumerate(queue[key]) if i not in time_to_test]
+                sim.interventions.anctesting.newborn_queue[key] = new_queue_entry
+
         return
 
 
