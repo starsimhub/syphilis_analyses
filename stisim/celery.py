@@ -66,6 +66,10 @@ def run_sim(seed, location, total_pop, dt, n_agents, disease='hiv', return_sim=F
                         
     df_res = sim.export_df() #ssm.export_results(sim)    #ss.export_df
     df = pd.DataFrame.from_dict(df_res)
+    for kwarg in kwargs:
+        if kwarg != 'conc':
+            df[kwarg] = kwargs[kwarg]
+
 
     summary = sc.dcp(kwargs)
     summary["seed"] = seed

@@ -101,7 +101,11 @@ def make_hiv_sim(seed, location='zimbabwe', total_pop=100e6, dt=1, n_agents=500,
                  duration_on_ART=ss.lognorm_ex(mean=18, stdev=5),
                  cd4_start_dist=ss.lognorm_ex(mean=800, stdev=10),
                  risk_groups_f=ss.choice(a=3, p=np.array([0.85, 0.14, 0.01])),
-                 risk_groups_m=ss.choice(a=3, p=np.array([0.78, 0.21, 0.01])), **kwargs):
+                 risk_groups_m=ss.choice(a=3, p=np.array([0.78, 0.21, 0.01])),
+                 p_pair_form=0.5,
+                 conc={'f': [0.0001, 0.01, 0.1],
+                                  'm': [0.01, 0.2, 0.5]},
+                 **kwargs):
     """
     Make a sim with HIV
     """
@@ -122,8 +126,8 @@ def make_hiv_sim(seed, location='zimbabwe', total_pop=100e6, dt=1, n_agents=500,
     ####################################################################################################################
     # Add Syphilis
     ####################################################################################################################
-    hiv.pars['dist_sus_with_syphilis'] = ss.lognorm_ex(mean=1.5, stdev=0.25)  # TODO Data?
-    hiv.pars['dist_trans_with_syphilis'] = ss.lognorm_ex(mean=1.5, stdev=0.025)  # TODO Data?
+    hiv.pars['dist_sus_with_syphilis'] = ss.lognorm_ex(mean=2, stdev=0.25)  # TODO Data?
+    hiv.pars['dist_trans_with_syphilis'] = ss.lognorm_ex(mean=2, stdev=0.025)  # TODO Data?
     tivec = np.arange(start=1990, stop=2021 + 1 / 12, step=1 / 12)
     hiv.pars['syphilis_prev'] = pd.DataFrame({"Years": tivec,
                                               "Value": (np.interp(tivec,
@@ -171,6 +175,14 @@ def make_hiv_sim(seed, location='zimbabwe', total_pop=100e6, dt=1, n_agents=500,
     sexual = StructuredSexual()
     sexual.pars.risk_groups_f = risk_groups_f
     sexual.pars.risk_groups_m = risk_groups_m
+    sexual.pars.p_pair_form = p_pair_form
+    sexual.pars.f0_conc.pars.lam = conc['f'][0]
+    sexual.pars.f1_conc.pars.lam = conc['f'][1]
+    sexual.pars.f2_conc.pars.lam = conc['f'][2]
+    sexual.pars.m0_conc.pars.lam = conc['m'][0]
+    sexual.pars.m1_conc.pars.lam = conc['m'][1]
+    sexual.pars.m2_conc.pars.lam = conc['m'][2]
+
     maternal = ss.MaternalNet()
 
     ####################################################################################################################
