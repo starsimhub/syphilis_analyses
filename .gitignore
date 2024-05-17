@@ -122,3 +122,6 @@ flake8_junit.xml
 
 .ipython
 .matplotlib
+.idea
+*.png
+*.obj
