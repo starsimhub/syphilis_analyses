@@ -29,11 +29,12 @@ class HIV(ss.Infection):
             dist_sus_with_syphilis=ss.normal(loc=1.5, scale=0.25),
             dist_trans_with_syphilis=ss.normal(loc=1.2, scale=0.025),
             transmission_sd=0.025,
-            syphilis_prev_df=None,
-            primary_acute_inf_dur=1,  # in months
+            syphilis_prev=0.05,
+            primary_acute_inf_dur=2.9,  # in months
             art_efficacy=0.96,
             maternal_beta_pmtct_df=None,
             pmtct_coverages_df=None,
+            beta=1,
         )
 
         self.update_pars(pars, **kwargs)
@@ -191,11 +192,14 @@ class HIV(ss.Infection):
         """
         sim = self.sim
         # Get syphilis prevalence data
-        if len(self.pars.syphilis_prev[self.pars.syphilis_prev['Years'] == sim.year]['Value'].tolist()) > 0:
-            syphilis_prev = self.pars.syphilis_prev[self.pars.syphilis_prev['Years'] == sim.year]['Value'].tolist()[0]
+        if type(self.pars.syphilis_prev) == float:
+            syphilis_prev = self.pars.syphilis_prev
         else:
-            # If data is not available, grab the last one
-            syphilis_prev = self.pars.syphilis_prev.Value.iloc[-1]
+            if len(self.pars.syphilis_prev[self.pars.syphilis_prev['Years'] == sim.year]['Value'].tolist()) > 0:
+                syphilis_prev = self.pars.syphilis_prev[self.pars.syphilis_prev['Years'] == sim.year]['Value'].tolist()[0]
+            else:
+                # If data is not available, grab the last one
+                syphilis_prev = self.pars.syphilis_prev.Value.iloc[-1]
 
         current_syphilis_prev = len(self.syphilis_inf.uids)/len(sim.people.alive.uids)
         syphilis_prev_change = syphilis_prev - current_syphilis_prev
@@ -392,12 +396,15 @@ class HIV(ss.Infection):
         for risk_group in np.unique(self.sim.networks.structuredsexual.risk_group).astype(int):
             for sex in ['female', 'male']:
                 risk_group_infected = self.infected[(self.sim.networks.structuredsexual.risk_group == risk_group) & (self.sim.people[sex])]
-                self.results['prevalence_risk_group_' + str(risk_group) + '_' + sex][ti] = sum(risk_group_infected) / len(risk_group_infected)
-                self.results['new_infections_risk_group_' + str(risk_group) + '_' + sex][ti] = sum(risk_group_infected) / len(risk_group_infected)
+                if len(risk_group_infected) > 0:
+                    self.results['prevalence_risk_group_' + str(risk_group) + '_' + sex][ti] = sum(risk_group_infected) / len(risk_group_infected)
+                    self.results['new_infections_risk_group_' + str(risk_group) + '_' + sex][ti] = sum(risk_group_infected) / len(risk_group_infected)
 
         # Add FSW and clients to results:
-        self.results['prevalence_sw'][ti] = sum(fsw_infected) / len(fsw_infected)
-        self.results['prevalence_client'][ti] = sum(client_infected) / len(client_infected)
+        if len(fsw_infected) > 0:
+            self.results['prevalence_sw'][ti] = sum(fsw_infected) / len(fsw_infected)
+        if len(client_infected) > 0:
+            self.results['prevalence_client'][ti] = sum(client_infected) / len(client_infected)
 
         return
 
