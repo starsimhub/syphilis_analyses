@@ -22,6 +22,7 @@ def load_syph_dx():
         rst = ss.Dx(df[df.name == 'rst'], hierarchy=hierarchy),
         syndromic = ss.Dx(df[df.name == 'syndromic'], hierarchy=hierarchy),
         dual = ss.Dx(df[df.name == 'dual'], hierarchy=hierarchy),
+        newborn_exam = ss.Dx(df[df.name == 'newborn_exam'], hierarchy=hierarchy),
     )
     return dxprods
 
@@ -105,7 +106,7 @@ class SymptomaticTesting(BaseTest):
     def check_eligibility(self, sim):
         conditions = sim.diseases.syphilis.active
         if self.eligibility is not None:
-            other_eligible  = sc.promotetoarray(self.eligibility(sim)) 
+            other_eligible  = sc.promotetoarray(self.eligibility(sim))
             conditions = conditions & other_eligible
         return conditions.uids
 

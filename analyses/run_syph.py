@@ -73,9 +73,11 @@ def make_testing_intvs():
 
     # Algorithm for newborn testing
     newborn_test_data = np.array([0.01]*31)
-    newborn_test = LinkedNewbornTesting(rel_test=1, product='rst', test_prob_data=newborn_test_data, years=test_years)
+    newborn_test = LinkedNewbornTesting(rel_test=1, product='newborn_exam', test_prob_data=newborn_test_data, years=test_years)
 
+    # Create list of interventions
     interventions = [symp_test, anc_test, newborn_test]
+
     return interventions
 
 
