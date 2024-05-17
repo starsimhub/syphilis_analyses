@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import sciris as sc
 from stisim.networks import StructuredSexual
 from stisim.diseases.syphilis import Syphilis
-from syph_tests import SymptomaticTesting
+from syph_tests import SymptomaticTesting, ANCTesting, LinkedNewbornTesting
 
 
 quick_run = True
@@ -49,11 +49,40 @@ def make_syph_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, late
     return sim_kwargs
 
 
+def make_testing_intvs():
+
+    # Algorithm for symptomatic testing
+    # TODO
+    # 1. consider sensitivity and specificity - build in prevalence of other GUD?
+    # 2. SOC is to confirm with an RPR - construct an algorithm?
+    # 3. Check that we whould be getting high positivity with reasonable numbers of false positives
+    # 4. People who present with symptoms things might be:
+    #       a. ‘diagnosed’ through syndromic management
+    #       b. given a test (treponemal, nontreponemal, RPR/VDR, and dual HIV tests)
+    #    Need to figure out how to incorporate this difference
+    symp_test_data = pd.read_csv('data/symp_test_prob.csv')
+    symp_test = SymptomaticTesting(rel_test=1, product='rst', test_prob_data=symp_test_data)
+
+    # Algorithm for ANC testing
+    # TODO
+    # 1. Subsequent steps for those who test positive?
+    # 2. Split between women given this test vs the dual test vs other?
+    anc_test_data = np.array([0.05]*31)
+    test_years = np.arange(2000, 2031)
+    anc_test = ANCTesting(rel_test=1, product='rst', test_prob_data=anc_test_data, years=test_years)
+
+    # Algorithm for newborn testing
+    newborn_test_data = np.array([0.01]*31)
+    newborn_test = LinkedNewbornTesting(rel_test=1, product='rst', test_prob_data=newborn_test_data, years=test_years)
+
+    interventions = [symp_test, anc_test, newborn_test]
+    return interventions
+
+
 def run_syph(location='zimbabwe', total_pop=100e6, dt=1.0, n_agents=500):
 
     sim_kwargs = make_syph_sim(location=location, total_pop=total_pop, dt=dt, n_agents=n_agents)
-    test_prob_data = pd.read_csv('data/symp_test_prob.csv')
-    interventions = SymptomaticTesting(product='rst', test_prob_data=test_prob_data)
+    interventions = make_testing_intvs()
     sim = ss.Sim(interventions=interventions, **sim_kwargs)
     sim.run()
 
@@ -164,7 +193,7 @@ if __name__ == '__main__':
     )[location]
 
 
-    sim = run_syph(location=location, total_pop=total_pop, dt=1/12, n_agents=1000)
+    sim = run_syph(location=location, total_pop=total_pop, dt=1/12, n_agents=10_000)
 
     # sc.saveobj(f'sim_{location}.obj', sim)
     # plot_degree(sim)
