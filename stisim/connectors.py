@@ -6,14 +6,19 @@ import starsim as ss
 from stisim.diseases.syphilis import Syphilis
 from stisim.diseases.hiv import HIV
 
-__all__ = ['hiv_syph']
+__all__ = ['hiv_syph_connector']
 
 
-class hiv_syph(ss.Connector):
+class hiv_syph_connector(ss.Connector):
 
     def __init__(self, pars=None, **kwargs):
         super().__init__(label='HIV-Syphilis', requires=[HIV, Syphilis])
         self.default_pars(
+
+            syphilis_rel_sus=ss.normal(loc=1.5, scale=0.25), # Relative increase in susceptibility due to syphilis
+            syphilis_rel_trans=ss.normal(loc=1.2, scale=0.025), # Relative increase in transmission due to syphilis
+
+
             rel_sus_syph_hiv=2,         # People with HIV are 2x more likely to acquire syphilis
             rel_sus_syph_aids=5,        # People with AIDS are 5x more likely to acquire syphilis
             rel_trans_syph_hiv=1.5,     # People with HIV are 1.5x more likely to transmit syphilis

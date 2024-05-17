@@ -364,10 +364,7 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
     hiv.pars['dist_sus_with_syphilis'] = ss.normal(loc=1.5, scale=0.25) # TODO Data?
     hiv.pars['dist_trans_with_syphilis'] = ss.normal(loc=1.5, scale=0.025) # TODO Data? 
     tivec = np.arange(start=1990, stop=2021 + 1 / 12, step=1 / 12)
-    hiv.pars['syphilis_prev'] = pd.DataFrame({"Years": tivec,
-                                             "Value": (np.interp(tivec,
-                                                         np.arange(1990, 2021+1, 1),
-                                                         np.repeat(0.05, len(np.arange(1990, 2021+1, 1)))))})
+
     ####################################################################################################################
     # Treatment Data
     ####################################################################################################################

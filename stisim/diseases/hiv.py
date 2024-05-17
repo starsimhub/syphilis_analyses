@@ -26,10 +26,8 @@ class HIV(ss.Infection):
             init_prev=ss.bernoulli(p=0.05),
             init_diagnosed=ss.bernoulli(p=0.01),
             dist_ti_init_infected=ss.uniform(low=-10 * 12, high=0),
-            dist_sus_with_syphilis=ss.normal(loc=1.5, scale=0.25),
-            dist_trans_with_syphilis=ss.normal(loc=1.2, scale=0.025),
+
             transmission_sd=0.025,
-            syphilis_prev_df=None,
             primary_acute_inf_dur=1,  # in months
             art_efficacy=0.96,
             maternal_beta_pmtct_df=None,
@@ -40,8 +38,6 @@ class HIV(ss.Infection):
 
         # States
         self.add_states(
-            ss.BoolArr('syphilis_inf'),
-            ss.FloatArr('ti_syphilis_inf'),
             ss.BoolArr('on_art'),
             ss.FloatArr('art_transmission_reduction'),  # Reduction in transmission dependent on initial cd4 count
             ss.FloatArr('ti_art'),
@@ -185,35 +181,12 @@ class HIV(ss.Infection):
 
         return
 
-    def update_syphilis_prev(self):
-        """
-        When  using a connector to the syphilis module, this is not needed. The connector should update the syphilis-positive state.
-        """
-        sim = self.sim
-        # Get syphilis prevalence data
-        if len(self.pars.syphilis_prev[self.pars.syphilis_prev['Years'] == sim.year]['Value'].tolist()) > 0:
-            syphilis_prev = self.pars.syphilis_prev[self.pars.syphilis_prev['Years'] == sim.year]['Value'].tolist()[0]
-        else:
-            # If data is not available, grab the last one
-            syphilis_prev = self.pars.syphilis_prev.Value.iloc[-1]
-
-        current_syphilis_prev = len(self.syphilis_inf.uids)/len(sim.people.alive.uids)
-        syphilis_prev_change = syphilis_prev - current_syphilis_prev
-        # Infect proportion of agents with syphilis
-        uids_not_infected = (~self.syphilis_inf).uids
-        uids = uids_not_infected[np.random.random(len(uids_not_infected)) < syphilis_prev_change]
-        self.syphilis_inf[uids] = True
-        self.ti_syphilis_inf[uids] = sim.ti
-        return
-
 
     def update_pre(self):
         """
         Carry out autonomous updates at the start of the timestep (prior to transmission)
         """
-
-        # Update relative transmissibiltiy and susceptibility based on syphilis prevalence
-        self.update_syphilis_prev()
+        super().update_pre()
 
         # Update cd4 start for new agents:
         self.update_cd4_starts()
@@ -223,9 +196,6 @@ class HIV(ss.Infection):
 
         # Update today's transmission
         self.update_transmission()
-
-        # Update transmission and susceptibility for syphilis-positive agents
-        self.update_syphilis_trans_sus()
 
         # Update MTCT - not needed anymore because of ART intervention??
         # self.update_mtct(sim)
