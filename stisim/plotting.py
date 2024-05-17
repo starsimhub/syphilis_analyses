@@ -141,12 +141,16 @@ def plot_hiv(sim_output, location='zimbabwe', total_pop=9980999, save='test'):
     #####################################################################################################################
     # New Diagnoses, Infections and on ART
     #####################################################################################################################
-    ax[1, 1].set_title('New Diagnoses and on ART')
-    # ax[1, 1].plot(sim_output.index, sim_output['hiv.new_infections'], label='New Infections')
+    ax[1, 1].set_title('New Infections, Diagnoses and on ART')
+    ax[1, 1].plot(sim_output.index, sim_output['hiv.new_infections'], label='New Infections')
+    hiv_new_infections_data = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Optional indicators', skiprows=17).iloc[[1], 2:36]
+    ax[1, 1].scatter(hiv_new_infections_data.columns, hiv_new_infections_data.values[0],  color='tab:red', label='Data - new infections per year')
+    ax[1, 1].plot(np.unique(sim_output['year']), sim_output.groupby(by='year')['hiv.new_infections'].sum(), color='tab:blue', label='Modelled - new infections per year')
+
     ax[1, 1].plot(sim_output.index, sim_output['hiv.new_diagnoses'], label='New Diagnoses')
     ax[1, 1].plot(sim_output.index, sim_output['hiv.new_agents_on_art'], label='New on ART')
     ax[1, 1].legend()
-    ax[1, 1].set_ylim([0, 100000])
+    # ax[1, 1].set_ylim([0, 500000])
 
     #####################################################################################################################
     # HIV Prevalence

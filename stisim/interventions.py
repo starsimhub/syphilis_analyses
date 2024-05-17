@@ -372,7 +372,8 @@ class ART(ss.Intervention):
         # Decrease susceptibility for any unborn infants of pregnant women on ART
         pregnant_onART_uids = (sim.people.pregnancy.pregnant & sim.diseases[self.disease].on_art).uids
         infants = sim.networks.maternalnet.find_contacts(pregnant_onART_uids)
-        sim.diseases['hiv'].rel_sus[ss.uids(infants)] = 0 # TODO When they're born, do we have to increase susceptibility again?
+        # TODO Update! Susceptibility should increase again later
+        sim.diseases['hiv'].rel_sus[ss.uids(infants)] = 0
         return
 
 
