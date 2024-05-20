@@ -28,10 +28,11 @@ class HIV(ss.Infection):
             dist_ti_init_infected=ss.uniform(low=-10 * 12, high=0),
 
             transmission_sd=0.025,
-            primary_acute_inf_dur=1,  # in months
+            primary_acute_inf_dur=2.9,  # in months
             art_efficacy=0.96,
             maternal_beta_pmtct_df=None,
             pmtct_coverages_df=None,
+            beta=1,
         )
 
         self.update_pars(pars, **kwargs)
@@ -180,7 +181,6 @@ class HIV(ss.Infection):
         self.cd4.set(ss.uids(uids), values)
 
         return
-
 
     def update_pre(self):
         """
@@ -362,12 +362,15 @@ class HIV(ss.Infection):
         for risk_group in np.unique(self.sim.networks.structuredsexual.risk_group).astype(int):
             for sex in ['female', 'male']:
                 risk_group_infected = self.infected[(self.sim.networks.structuredsexual.risk_group == risk_group) & (self.sim.people[sex])]
-                self.results['prevalence_risk_group_' + str(risk_group) + '_' + sex][ti] = sum(risk_group_infected) / len(risk_group_infected)
-                self.results['new_infections_risk_group_' + str(risk_group) + '_' + sex][ti] = sum(risk_group_infected) / len(risk_group_infected)
+                if len(risk_group_infected) > 0:
+                    self.results['prevalence_risk_group_' + str(risk_group) + '_' + sex][ti] = sum(risk_group_infected) / len(risk_group_infected)
+                    self.results['new_infections_risk_group_' + str(risk_group) + '_' + sex][ti] = sum(risk_group_infected) / len(risk_group_infected)
 
         # Add FSW and clients to results:
-        self.results['prevalence_sw'][ti] = sum(fsw_infected) / len(fsw_infected)
-        self.results['prevalence_client'][ti] = sum(client_infected) / len(client_infected)
+        if len(fsw_infected) > 0:
+            self.results['prevalence_sw'][ti] = sum(fsw_infected) / len(fsw_infected)
+        if len(client_infected) > 0:
+            self.results['prevalence_client'][ti] = sum(client_infected) / len(client_infected)
 
         return
 
