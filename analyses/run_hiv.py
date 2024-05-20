@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import sciris as sc
 from io import StringIO
 import seaborn as sns
+import stisim as sti
 from stisim.networks import StructuredSexual
 from stisim.products import Dx
 from stisim.diseases.hiv import HIV
@@ -20,7 +21,7 @@ from matplotlib.lines import Line2D
 
 quick_run = False
 ss.options['multirng'] = False
-
+datadir = sti.root/'analyses'/'data'
 
 def plot_T_level(sim_output):
     """
@@ -107,7 +108,7 @@ def plot_hiv(sim_output):
     #####################################################################################################################
     # n infections, diagnosed and on ART and cumulative states
     #####################################################################################################################
-    n_infections_data = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Optional indicators', skiprows=33).iloc[[1], 2:36]
+    n_infections_data = pd.read_excel(datadir/f'{location}_20230725.xlsx', sheet_name='Optional indicators', skiprows=33).iloc[[1], 2:36]
     ax[0, 0].scatter(n_infections_data.columns, n_infections_data.values, label='Data - number of PLHIV', color='tab:red')
     ax[0, 0].plot(sim_output.index, sim_output['hiv.n_infected'], label='n infected')
     ax[0, 0].plot(sim_output.index, sim_output['hiv.n_diagnosed'], label='n diagnosed')
@@ -130,7 +131,7 @@ def plot_hiv(sim_output):
     #####################################################################################################################
     # New Deaths and HIV Deaths
     #####################################################################################################################
-    hiv_deaths_data = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Optional indicators', skiprows=41).iloc[[1], 2:36]
+    hiv_deaths_data = pd.read_excel(datadir/f'{location}_20230725.xlsx', sheet_name='Optional indicators', skiprows=41).iloc[[1], 2:36]
     ax[1, 0].scatter(hiv_deaths_data.columns, hiv_deaths_data.values[0], color='tab:red', label='Data - yearly HIV deaths')
     sim_output['year'] = np.floor(np.round(sim_output.index, 1)).astype(int)
     ax[1, 0].plot(np.unique(sim_output['year']), sim_output.groupby(by='year')['hiv.new_deaths'].sum(), color='tab:blue', label='Modelled - yearly HIV deaths')
@@ -151,7 +152,7 @@ def plot_hiv(sim_output):
     #####################################################################################################################
     # HIV Prevalence
     #####################################################################################################################
-    prevalence_data = pd.read_csv(f'data/world_bank_hiv_prevalence.csv', skiprows=4).set_index('Country Name').loc[location.capitalize()].dropna()[3:]
+    prevalence_data = pd.read_csv(datadir/f'world_bank_hiv_prevalence.csv', skiprows=4).set_index('Country Name').loc[location.capitalize()].dropna()[3:]
     ax[2, 0].scatter(prevalence_data.index.astype(int), prevalence_data.values, color='tab:red', label='Data (15-49)')
     ax[2, 0].plot(sim_output.index, sim_output['hiv.prevalence'] * 100, label='General Population')
     ax[2, 0].set_title('HIV prevalence (%)')
@@ -176,13 +177,13 @@ def plot_hiv(sim_output):
     #####################################################################################################################
     # ART Coverage
     #####################################################################################################################
-    ART_coverages_raw = pd.read_csv(f'data/world_bank_art_coverages.csv', skiprows=4).set_index('Country Name').loc[location.capitalize()].dropna()[3:]
+    ART_coverages_raw = pd.read_csv(datadir/f'world_bank_art_coverages.csv', skiprows=4).set_index('Country Name').loc[location.capitalize()].dropna()[3:]
     tivec = np.arange(start=1990, stop=2021 + 1 / 12, step=1)
     ART_coverages_df = pd.DataFrame({"Years": tivec,
                                      "Value": (np.interp(tivec,
                                                          ART_coverages_raw.index.astype(int).tolist(),
                                                          (ART_coverages_raw.values / 100).tolist()))})
-    ART_coverages_raw = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Testing & treatment', skiprows=28).iloc[0:1, 2:43]
+    ART_coverages_raw = pd.read_excel(datadir/f'{location}_20230725.xlsx', sheet_name='Testing & treatment', skiprows=28).iloc[0:1, 2:43]
     pop_scale = total_pop / int(10e3)
     ART_coverages_df_numbers = pd.DataFrame({"Years": tivec,
                                              "Value": (np.interp(tivec,
@@ -223,7 +224,7 @@ def plot_hiv(sim_output):
     #####################################################################################################################
     # Yearly Tests
     #####################################################################################################################
-    n_tests_data = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Optional indicators', skiprows=1).iloc[[1], 2:36]
+    n_tests_data = pd.read_excel(datadir/f'{location}_20230725.xlsx', sheet_name='Optional indicators', skiprows=1).iloc[[1], 2:36]
     # Calculate yearly tests in the model:
     ax[4, 1].scatter(n_tests_data.columns, n_tests_data.values[0], color='tab:red', label='Data')
     sim_output['year'] = np.floor(np.round(sim_output.index, 1)).astype(int)
@@ -248,7 +249,7 @@ def plot_hiv(sim_output):
     #####################################################################################################################
     # Population
     #####################################################################################################################
-    population_data = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Population size', skiprows=72).iloc[0:1, 3:36]
+    population_data = pd.read_excel(datadir/f'{location}_20230725.xlsx', sheet_name='Population size', skiprows=72).iloc[0:1, 3:36]
     ax[5, 1].scatter(np.arange(1990, 2022 + 1, 1), population_data.loc[0].values, color='tab:red', label='Data')
     ax[5, 1].plot(sim_output.index, sim_output['n_alive'], label='Modelled')
     ax[5, 1].set_title('Population')
@@ -272,7 +273,7 @@ def get_testing_products():
     Define HIV products and testing interventions
     """
     # Load HIV test data:
-    hiv_testing_data = pd.read_excel(f'data/{location}_20230725.xlsx', sheet_name='Testing & treatment', skiprows=1)
+    hiv_testing_data = pd.read_excel(datadir/f'{location}_20230725.xlsx', sheet_name='Testing & treatment', skiprows=1)
     HIV_tests_data_raw = hiv_testing_data.iloc[0:15, 1:43]
     HIV_low_cd4count_data_raw = hiv_testing_data.iloc[21:22, 1:43]
     HIV_low_cd4count_data_raw = HIV_low_cd4count_data_raw.iloc[:, 1:]
@@ -368,7 +369,7 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
     ####################################################################################################################
     # Treatment Data
     ####################################################################################################################
-    ART_coverages_raw = pd.read_csv(f'data/world_bank_art_coverages.csv', skiprows=4).set_index('Country Name').loc[location.capitalize()].dropna()[3:]
+    ART_coverages_raw = pd.read_csv(datadir/f'world_bank_art_coverages.csv', skiprows=4).set_index('Country Name').loc[location.capitalize()].dropna()[3:]
     tivec = np.arange(start=1990, stop=2021 + 1 / 12, step=1 / 12)
     ART_coverages_df = pd.DataFrame({"Years": tivec,
                                      "Value": (np.interp(tivec,
@@ -381,16 +382,16 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
     # Make demographic modules
     ####################################################################################################################
 
-    fertility_rates = {'fertility_rate': pd.read_csv(f'data/{location}_asfr.csv')}
+    fertility_rates = {'fertility_rate': pd.read_csv(datadir/f'{location}_asfr.csv')}
     pregnancy = ss.Pregnancy(pars=fertility_rates)
-    death_rates = {'death_rate': pd.read_csv(f'data/{location}_deaths.csv'), 'units': 1}
+    death_rates = {'death_rate': pd.read_csv(datadir/f'{location}_deaths.csv'), 'units': 1}
     death = ss.Deaths(death_rates)
 
     ####################################################################################################################
     # Make people and networks
     ####################################################################################################################
     ss.set_seed(1)
-    ppl = ss.People(n_agents, age_data=pd.read_csv(f'data/{location}_age.csv'))
+    ppl = ss.People(n_agents, age_data=pd.read_csv(datadir/f'{location}_age.csv'))
     sexual = StructuredSexual()
     maternal = ss.MaternalNet()
 
