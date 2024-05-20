@@ -273,17 +273,15 @@ class HIV(ss.Infection):
         Update today's transmission
         """
         sim = self.sim
-        infected_uids_onART = sim.people.alive & self.infected & self.on_art
-        infected_uids_not_onART = sim.people.alive & self.infected & ~self.on_art
 
+        # Reset susceptibility and infectiousness
+        self.rel_sus[:] = 1
+        self.rel_trans[:] = 1
+
+        infected_uids_not_onART = sim.people.alive & self.infected & ~self.on_art
         duration_since_infection = sim.ti - self.ti_infected[infected_uids_not_onART]
         duration_since_infection = np.minimum(duration_since_infection, len(self.pars.cd4_timecourse) - 1).astype(int)
         duration_since_infection_transmission = np.minimum(duration_since_infection, len(self.pars.transmission_timecourse) - 1).astype(int)
-        duration_since_onART = sim.ti - self.ti_art[infected_uids_onART]
-
-        # Assumption: Art impact increases linearly over 6 months
-        duration_since_onART = np.minimum(duration_since_onART, 3 * 12)
-        duration_since_onART_transmission = np.minimum(duration_since_onART, 6)
 
         # Update transmission for agents not on ART with a cd4 count above 200:
         infected_uids_not_onART_cd4_above_200 = self.cd4[infected_uids_not_onART] >= 200
@@ -293,8 +291,17 @@ class HIV(ss.Infection):
 
         # Update transmission for agents on ART
         # When agents start ART, determine the reduction of transmission (linearly decreasing over 6 months)
+        infected_uids_onART = sim.people.alive & self.infected & self.on_art
+        duration_since_onART = sim.ti - self.ti_art[infected_uids_onART] # Time
+
+        # Assumption: Art impact increases linearly over 6 months
+        duration_since_onART = np.minimum(duration_since_onART, 3 * 12)
+        duration_since_onART_transmission = np.minimum(duration_since_onART, 6)
+
+
+
         self.get_transmission_reduction(duration_since_onART_transmission, infected_uids_onART.uids)
-        transmission_onART = np.maximum(1 - self.pars.art_efficacy, self.rel_trans[infected_uids_onART] - self.art_transmission_reduction[infected_uids_onART])
+        transmission_onART = np.maximum(1 - self.pars.art_efficacy, 1- - self.art_transmission_reduction[infected_uids_onART])
         self.rel_trans[infected_uids_onART] = transmission_onART
 
         # Overwrite transmission for agents whose CD4 counts are below 200:

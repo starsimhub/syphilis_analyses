@@ -39,7 +39,7 @@ class SyphilisPlaceholder(ss.Disease):
 
     def update_pre(self):
         """
-        When  using a connector to the syphilis module, this is not needed. The connector should update the syphilis-positive state.
+        When using a connector to the syphilis module, this is not needed. The connector should update the syphilis-positive state.
         """
 
         sim = self.sim
@@ -52,11 +52,11 @@ class SyphilisPlaceholder(ss.Disease):
 
         if change > 0:
             # Add a proportion of people that are not infected
-            uids = ~self.active.uids
+            uids = self.active.false()
             self._prev_dist.set(p=change/(len(uids)/len(sim.people)))
             self.active[self._prev_dist.filter(uids)] = True
         elif change < 0:
-            uids = self.active.uids
+            uids = self.active.true()
             self._prev_dist.set(p=-change/(len(uids)/len(sim.people)))
             self.active[self._prev_dist.filter(uids)] = False
 
