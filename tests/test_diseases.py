@@ -59,12 +59,12 @@ def test_hiv_epi():
     sc.heading('Test epi dynamics of hiv')
 
     location = 'zimbabwe'
-    fertility_rates = {'fertility_rate': pd.read_csv(f'../analyses/data/{location}_asfr.csv')}
+    fertility_rates = {'fertility_rate': pd.read_csv(sti.data/f'{location}_asfr.csv')}
     pregnancy = ss.Pregnancy(pars=fertility_rates)
-    death_rates = {'death_rate': pd.read_csv(f'../analyses/data/{location}_deaths.csv'), 'units': 1}
+    death_rates = {'death_rate': pd.read_csv(sti.data/f'{location}_deaths.csv'), 'units': 1}
     death = ss.Deaths(death_rates)
 
-    base_pars = dict(n_agents=10000, networks=[sti.StructuredSexual(), ss.MaternalNet()],
+    base_pars = dict(n_agents=5000, networks=[sti.StructuredSexual(), ss.MaternalNet()],
                                              demographics=[pregnancy, death])
 
     # Define the parameters to vary

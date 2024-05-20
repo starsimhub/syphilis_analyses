@@ -11,6 +11,7 @@ from .utils         import *
 # Assign the root folder
 import sciris as sc
 root = sc.thispath(__file__).parent
+data = root/'data'
 
 # Import the version and print the license
 print(__license__)

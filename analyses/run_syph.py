@@ -25,14 +25,14 @@ def make_syph_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, late
     syph.pars['rel_trans_latent'] = latent_trans
 
     # Make demographic modules
-    fertility_rates = {'fertility_rate': pd.read_csv(datadir/f'{location}_asfr.csv')}
+    fertility_rates = {'fertility_rate': pd.read_csv(sti.data/f'{location}_asfr.csv')}
     pregnancy = ss.Pregnancy(pars=fertility_rates)
-    death_rates = {'death_rate': pd.read_csv(datadir/f'{location}_deaths.csv'), 'units': 1}
+    death_rates = {'death_rate': pd.read_csv(sti.data/f'{location}_deaths.csv'), 'units': 1}
     death = ss.Deaths(death_rates)
 
     # Make people and networks
     ss.set_seed(1)
-    ppl = ss.People(n_agents, age_data=pd.read_csv(datadir/f'{location}_age.csv'))
+    ppl = ss.People(n_agents, age_data=pd.read_csv(sti.data/f'{location}_age.csv'))
     sexual = StructuredSexual()
     maternal = ss.MaternalNet()
 
