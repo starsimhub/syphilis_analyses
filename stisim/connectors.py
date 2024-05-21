@@ -59,7 +59,11 @@ class gud_syph(ss.Connector):
         return
 
     def update(self, sim):
-        """ Specify GUD-syphilis interactions """
+        """
+        Specify GUD-syphilis interactions
+        Question, should this be multiplicative?
+        Also, it needs to be reset after infection clears/enters latency
+        """
         # People with GUD are more likely to acquire syphilis
         sim.diseases.syphilis.rel_sus[sim.people.gud.infected] = self.pars.rel_sus_syph_gud
 
