@@ -6,19 +6,21 @@ import numpy as np
 import sciris as sc
 from sciris import randround as rr # Since used frequently
 import starsim as ss
+import stisim as sti
+
 
 __all__ = ['Syphilis']
 
 
 class Syphilis(ss.Infection):
 
-    def __init__(self, pars=None, **kwargs):
+    def __init__(self, pars=None, init_prev_data=None, **kwargs):
         super().__init__()
         self.default_pars(
             # Adult syphilis natural history, all specified in years
-            dur_exposed = ss.lognorm_ex(mean=1 / 12, stdev=1 / 36),  # https://pubmed.ncbi.nlm.nih.gov/9101629/
-            dur_primary = ss.lognorm_ex(mean=1.5 / 12, stdev=1 / 36),  # https://pubmed.ncbi.nlm.nih.gov/9101629/
-            dur_secondary = ss.lognorm_ex(mean=3.6 / 12, stdev=1.5 / 12),  # https://pubmed.ncbi.nlm.nih.gov/9101629/
+            dur_exposed = ss.lognorm_ex(mean=1/52, stdev=1/52),  # https://pubmed.ncbi.nlm.nih.gov/9101629/
+            dur_primary = ss.lognorm_ex(mean=1.5/12, stdev=1/36),  # https://pubmed.ncbi.nlm.nih.gov/9101629/
+            dur_secondary = ss.lognorm_ex(mean=3.6/12, stdev=1.5/12),  # https://pubmed.ncbi.nlm.nih.gov/9101629/
             p_reactivate = ss.bernoulli(p=0.35),  # Probability of reactivating from latent to secondary
             time_to_reactivate = ss.lognorm_ex(mean=1, stdev=1),  # Time to reactivation
             p_tertiary = ss.bernoulli(p=0.35),  # https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4917057/
@@ -33,15 +35,18 @@ class Syphilis(ss.Infection):
             rel_trans_secondary=1,
             rel_trans_latent=0.1,  # Baseline level; this decays exponentially with duration of latent infection
             rel_trans_tertiary=0.0,
-            rel_trans_latent_half_life=10,
+            rel_trans_latent_half_life=1,
 
             # Congenital syphilis outcomes
             # Birth outcomes coded as:
-            #   0: Neonatal death
-            #   1: Stillborn
-            #   2: Congenital syphilis
-            #   3: Live birth without syphilis-related complications
-            # Source: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5973824/)
+            #   0: Miscarriage
+            #   1: Neonatal death
+            #   2: Stillborn
+            #   3: Congenital syphilis
+            #   4: Live birth without syphilis-related complications
+            # Sources:
+            #   - https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5973824/)
+            #   - https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2819963/
             birth_outcomes=sc.objdict(
                 active = ss.choice(a=5, p=np.array([0.125, 0.125, 0.20, 0.35, 0.200])), # Probabilities of active by birth outcome
                 latent = ss.choice(a=5, p=np.array([0.050, 0.075, 0.10, 0.05, 0.725])), # Probabilities of latent
@@ -49,10 +54,16 @@ class Syphilis(ss.Infection):
             birth_outcome_keys=['miscarriage', 'nnd', 'stillborn', 'congenital'],
 
             # Initial conditions
-            init_prev=ss.bernoulli(p=0.03),
+            init_prev=ss.bernoulli(p=0),
+            rel_init_prev=1,
         )
 
         self.update_pars(pars, **kwargs)
+
+        # Set initial prevalence
+        self.init_prev_data = init_prev_data
+        if init_prev_data is not None:
+            self.pars.init_prev = ss.bernoulli(sti.make_init_prev_fn)
 
         self.add_states(
             # Adult syphilis states
@@ -194,7 +205,7 @@ class Syphilis(ss.Infection):
         dur_latent = ti - self.ti_latent[self.latent]
         hl = self.pars.rel_trans_latent_half_life
         decay_rate = np.log(2) / hl if ~np.isnan(hl) else 0.
-        latent_trans = self.pars.rel_trans_latent * np.exp(-decay_rate * dur_latent*dt)
+        latent_trans = self.pars.rel_trans_latent * np.exp(-decay_rate * dur_latent * dt)
         self.rel_trans[self.latent] = latent_trans
         return
 
@@ -289,99 +300,5 @@ class Syphilis(ss.Infection):
                         setattr(self, ti_outcome, vals)
 
         return
-
-
-# %% Syphilis-related interventions
-
-__all__ += ['syph_screening', 'syph_treatment']
-
-datafiles = sc.objdict()
-for key in ['dx', 'tx', 'vx']:
-    datafiles[key] = sc.thispath() / f'../data/products/syph_{key}.csv'
-
-
-def load_syph_dx():
-    """
-    Create default diagnostic products
-    """
-    df = sc.dataframe.read_csv(datafiles.dx)
-    hierarchy = ['positive', 'inadequate', 'negative']
-    dxprods = dict(
-        rpr = ss.Dx(df[df.name == 'rpr'], hierarchy=hierarchy),
-        rst = ss.Dx(df[df.name == 'rst'], hierarchy=hierarchy),
-    )
-    return dxprods
-
-
-def load_syph_tx():
-    """
-    Create default treatment products
-    """
-    df = sc.dataframe.read_csv(datafiles.tx)  # Read in dataframe with parameters
-    txprods = dict()
-    for name in df.name.unique():
-        txprods[name] = ss.Tx(df[df.name == name])
-    return txprods
-
-
-class syph_screening(ss.routine_screening):
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # self.requires = Syphilis  # not currently working
-        return
-
-    def _parse_product_str(self, product):
-        products = load_syph_dx()
-        if product not in products:
-            errormsg = f'Could not find diagnostic product {product} in the standard list ({sc.strjoin(products.keys())})'
-            raise ValueError(errormsg)
-        else:
-            return products[product]
-
-    def check_eligibility(self, sim):
-        """
-        Return an array of indices of agents eligible for screening at time t, i.e. sexually active
-        females in age range, plus any additional user-defined eligibility
-        """
-        if self.eligibility is not None:
-            is_eligible = self.eligibility(sim)
-        else:
-            is_eligible = sim.people.alive  # Probably not required
-        return is_eligible
-
-    def initialize(self, sim):
-        super().initialize(sim)
-        self.results += [
-            ss.Result('syphilis', 'n_screened', sim.npts, dtype=int, scale=True),
-            ss.Result('syphilis', 'n_dx', sim.npts, dtype=int, scale=True),
-        ]
-        return
-
-
-class syph_treatment(ss.treat_num):
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # self.requires = Syphilis
-        return
-
-    def _parse_product_str(self, product):
-        products = load_syph_tx()
-        if product not in products:
-            errormsg = f'Could not find treatment product {product} in the standard list ({sc.strjoin(products.keys())})'
-            raise ValueError(errormsg)
-        else:
-            return products[product]
-
-    def initialize(self, sim):
-        super().initialize(sim)
-        self.results += ss.Result('syphilis', 'n_tx', sim.npts, dtype=int, scale=True)
-        return
-
-    def apply(self, sim):
-        treat_inds = super().apply(sim)
-        sim.people.syphilis.infected[treat_inds] = False
-        self.results['n_tx'][sim.ti] += len(treat_inds)
 
 

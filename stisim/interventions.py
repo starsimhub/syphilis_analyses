@@ -103,7 +103,7 @@ def get_subtargets(subtarget, sim):
 
 # %% Custom interventions
 
-__all__ += ['BaseTest', 'ART', 'DualTest']
+__all__ += ['BaseTest', 'ART']
 
 
 class BaseTest(ss.Intervention):
@@ -375,14 +375,6 @@ class ART(ss.Intervention):
         sim.diseases['hiv'].rel_sus[ss.uids(infants)] = 0 # TODO When they're born, do we have to increase susceptibility again?
         return
 
-
-class DualTest(ss.Intervention):
-    """ Dial test for diagnosing HIV and syphilis """
-    def __init__(self, pars=None):
-        return
-
-    def apply(self):
-        return
 
 
 # %% Validation and other checks -- TODO, should this be an analyzer?
