@@ -96,9 +96,9 @@ class PerformTest(ss.Intervention):
 agents = sc.odict()
 agents['No infection'] = []
 agents['Goes onto ART early (CD4 > 200) and stays on forever'] = [('hiv_infection', 1), ('art_start', 1*12)]
-agents['Goes onto ART late (CD4 < 200) and stays on forever'] = [('hiv_infection', 1), ('art_start', 5*12)]
-agents['Goes off ART with CD4 > 200'] = [('hiv_infection', 1), ('art_start', 5*12), ('art_stop', 10*12)]
-agents['Goes off ART with CD4 < 200'] = [('hiv_infection', 1), ('art_start', 5*12), ('art_stop', 5*12+2)]
+agents['Goes onto ART late (CD4 < 200) and stays on forever'] = [('hiv_infection', 1), ('art_start', 10*12)]
+agents['Goes off ART with CD4 > 200'] = [('hiv_infection', 1), ('art_start', 10*12), ('art_stop', 15*12)]
+agents['Goes off ART with CD4 < 200'] = [('hiv_infection', 1), ('art_start', 10*12), ('art_stop', 10*12+2)]
 
 events = []
 for i, x in enumerate(agents.values()):
