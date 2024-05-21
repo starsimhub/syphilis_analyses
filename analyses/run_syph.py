@@ -128,12 +128,7 @@ def run_syph(location='zimbabwe', total_pop=100e6, dt=1.0, n_agents=500, latent_
 
     sim_kwargs = make_syph_sim(location=location, total_pop=total_pop, dt=dt, n_agents=n_agents, latent_trans=latent_trans)
     interventions = make_testing_intvs()
-    syph_by_pregnancy = sti.GroupResults(
-        module=('diseases', 'syphilis'),
-        results=['prevalence', 'new_infections'],
-        group_by=('demographics', 'pregnancy', 'pregnant')
-    )
-    sim = ss.Sim(interventions=interventions, analyzers=syph_by_pregnancy, **sim_kwargs)
+    sim = ss.Sim(interventions=interventions, **sim_kwargs)
     sim.run()
 
     return sim
@@ -257,7 +252,6 @@ if __name__ == '__main__':
     )[location]
 
     sim = run_syph(location=location, total_pop=total_pop, dt=1/12, n_agents=10_000, latent_trans=0.1)
-    # sim = run_gud(location=location, total_pop=total_pop, dt=1/12, n_agents=10_000)
     import pylab as pl
     sim.plot('gud')
     pl.show()
