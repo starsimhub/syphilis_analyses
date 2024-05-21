@@ -8,13 +8,9 @@ import starsim as ss
 import pandas as pd
 import matplotlib.pyplot as plt
 import sciris as sc
-# from stisim.networks import StructuredSexual
-# from stisim.diseases.syphilis import Syphilis
 import stisim as sti
 from syph_tests import TestProb, ANCTesting, LinkedNewbornTesting, TreatNum
 
-
-quick_run = True
 
 
 def make_syph_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, latent_trans=0.075):
@@ -125,14 +121,6 @@ def make_testing_intvs():
     newborn_test = LinkedNewbornTesting(product='newborn_exam', test_prob_data=0.1)
     interventions += newborn_test
 
-    # TODO
-    # 1. consider sensitivity and specificity - build in prevalence of other GUD?
-    # 2. SOC is to confirm with an RPR - construct an algorithm?
-    # 3. Check that we whould be getting high positivity with reasonable numbers of false positives
-    # 4. People who present with symptoms things might be:
-    #       a. ‘diagnosed’ through syndromic management
-    #       b. given a test (treponemal, nontreponemal, RPR/VDR, and dual HIV tests)
-
     return interventions
 
 
@@ -140,7 +128,12 @@ def run_syph(location='zimbabwe', total_pop=100e6, dt=1.0, n_agents=500, latent_
 
     sim_kwargs = make_syph_sim(location=location, total_pop=total_pop, dt=dt, n_agents=n_agents, latent_trans=latent_trans)
     interventions = make_testing_intvs()
-    sim = ss.Sim(interventions=interventions, **sim_kwargs)
+    syph_by_pregnancy = sti.GroupResults(
+        module=('diseases', 'syphilis'),
+        results=['prevalence', 'new_infections'],
+        group_by=('demographics', 'pregnancy', 'pregnant')
+    )
+    sim = ss.Sim(interventions=interventions, analyzers=syph_by_pregnancy, **sim_kwargs)
     sim.run()
 
     return sim
@@ -268,7 +261,6 @@ if __name__ == '__main__':
     import pylab as pl
     sim.plot('gud')
     pl.show()
-
 
     # sc.saveobj(f'sim_{location}.obj', sim)
     # plot_degree(sim)

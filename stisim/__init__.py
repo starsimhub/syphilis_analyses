@@ -4,6 +4,7 @@ from .networks      import *
 from .interventions import *
 from .diseases      import *
 from .connectors    import *
+from .analyzers     import *
 
 # Assign the root folder
 import sciris as sc
