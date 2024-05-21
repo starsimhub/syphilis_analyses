@@ -54,7 +54,7 @@ class Syphilis(ss.Infection):
             birth_outcome_keys=['miscarriage', 'nnd', 'stillborn', 'congenital'],
 
             # Initial conditions
-            init_prev=0,
+            init_prev=ss.bernoulli(p=0),
             rel_init_prev=1,
         )
 

@@ -64,14 +64,14 @@ def test_hiv_epi():
     death_rates = {'death_rate': pd.read_csv(f'../analyses/data/{location}_deaths.csv'), 'units': 1}
     death = ss.Deaths(death_rates)
 
-    base_pars = dict(n_agents=10000, networks=[sti.StructuredSexual(), ss.MaternalNet()],
+    base_pars = dict(n_agents=500, networks=[sti.StructuredSexual(), ss.MaternalNet()],
                                              demographics=[pregnancy, death])
 
     # Define the parameters to vary
     par_effects = dict(
         primary_acute_inf_dur=[2.9, 6.1],
-        init_prev=[0.1, 0.9],
-        beta=[0.1, 0.95]  # Beta for male to female transmission; opposite direction uses half this value
+        init_prev=[0.01, 0.1],
+        beta=[0.01, 0.95]  # Beta for male to female transmission; opposite direction uses half this value
     )
 
     # Loop over each of the above parameters and make sure they affect the epi dynamics in the expected ways
@@ -115,6 +115,5 @@ def test_hiv_epi():
 
 if __name__ == '__main__':
     sc.options(interactive=False)
-    # s1, s2 = test_syph_epi()
-
+    s1, s2 = test_syph_epi()
     s3, s4 = test_hiv_epi()
