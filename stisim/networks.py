@@ -121,8 +121,8 @@ class StructuredSexual(ss.SexualNetwork):
             for rg in range(module.pars.n_risk_groups):
                 age_conds = (sim.people.age[uids] >= a_range[0]) & (sim.people.age[uids] < a_range[1])
                 f_el_bools = age_conds & (module.risk_group[uids] == rg) & sim.people.female[uids]
+                f_el_uids = ss.uids(f_el_bools)
                 f_el_uids = uids[f_el_bools.nonzero()[0]]  # FIX THIS
-                loc[f_el_uids] = module.pars[par][a_label][rg][0]
                 scale[f_el_uids] = module.pars[par][a_label][rg][1]
         return loc, scale
 
@@ -336,18 +336,18 @@ class StructuredSexual(ss.SexualNetwork):
         self.contacts.dur = self.contacts.dur - dt
 
         # Non-alive agents are removed
-        alive_bools = people.alive[self.contacts.p1] & people.alive[self.contacts.p2]
+        alive_bools = people.alive[ss.uids(self.contacts.p1)] & people.alive[ss.uids(self.contacts.p2)]
         active = (self.contacts.dur > 0) & alive_bools
 
         # For gen pop contacts that are due to expire, decrement the partner count
         inactive_gp = ~active & (~self.contacts.sw)
-        self.partners[self.contacts.p1[inactive_gp]] -= 1
-        self.partners[self.contacts.p2[inactive_gp]] -= 1
+        self.partners[ss.uids(self.contacts.p1[inactive_gp])] -= 1
+        self.partners[ss.uids(self.contacts.p2[inactive_gp])] -= 1
 
         # For all contacts that are due to expire, remove them from the contacts list
         if len(active) > 0:
             for k in self.meta_keys():
-                self.contacts[k] = self.contacts[k][active]
+                self.contacts[k] = (self.contacts[k][active])
 
         return
 

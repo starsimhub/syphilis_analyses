@@ -6,6 +6,7 @@ Test epi dynamics
 import sciris as sc
 import starsim as ss
 import stisim as sti
+import pandas as pd
 
 
 def test_syph_epi():
@@ -54,7 +55,66 @@ def test_syph_epi():
 
     return s0, s1
 
+def test_hiv_epi():
+    sc.heading('Test epi dynamics of hiv')
+
+    location = 'zimbabwe'
+    fertility_rates = {'fertility_rate': pd.read_csv(f'../analyses/data/{location}_asfr.csv')}
+    pregnancy = ss.Pregnancy(pars=fertility_rates)
+    death_rates = {'death_rate': pd.read_csv(f'../analyses/data/{location}_deaths.csv'), 'units': 1}
+    death = ss.Deaths(death_rates)
+
+    base_pars = dict(n_agents=10000, networks=[sti.StructuredSexual(), ss.MaternalNet()],
+                                             demographics=[pregnancy, death])
+
+    # Define the parameters to vary
+    par_effects = dict(
+        primary_acute_inf_dur=[2.9, 6.1],
+        init_prev=[0.1, 0.9],
+        beta=[0.1, 0.95]  # Beta for male to female transmission; opposite direction uses half this value
+    )
+
+    # Loop over each of the above parameters and make sure they affect the epi dynamics in the expected ways
+    for par, par_val in par_effects.items():
+        lo = par_val[0]
+        hi = par_val[1]
+
+        # Make baseline pars
+        pars0 = sc.dcp(base_pars)
+        pars1 = sc.dcp(base_pars)
+
+        if par == 'beta':
+            simpardict_lo = {'beta': {'structuredsexual': [lo, lo/2],
+                                      'maternal': [0.95, 0.0]}}
+            simpardict_hi = {'beta': {'structuredsexual': [hi, hi/2],
+                                      'maternal': [0.95, 0.0]}}
+        else:
+            simpardict_lo = {par: lo, 'beta': {'structuredsexual': [0.3, 0.15],
+                                               'maternal': [0.95, 0.0]}}
+            simpardict_hi = {par: hi, 'beta': {'structuredsexual': [0.3, 0.15],
+                                               'maternal': [0.95, 0.0]}}
+
+        pars0['diseases'] = sti.HIV(**simpardict_lo)
+        pars1['diseases'] = sti.HIV(**simpardict_hi)
+
+        # Run the simulations and pull out the results
+        s0 = ss.Sim(pars0, label=f'{par} {par_val[0]}').run()
+        s1 = ss.Sim(pars1, label=f'{par} {par_val[1]}').run()
+
+        # Check results
+        ind = 1 if par == 'init_prev' else -1
+        v0 = s0.results.hiv.cum_infections[ind]
+        v1 = s1.results.hiv.cum_infections[ind]
+
+        print(f'Checking with varying {par:10s} ... ', end='')
+        assert v0 <= v1, f'Expected infections to be lower with {par}={lo} than with {par}={hi}, but {v0} > {v1})'
+        print(f'✓ ({v0} <= {v1})')
+
+    return s0, s1
+
 
 if __name__ == '__main__':
     sc.options(interactive=False)
-    s1, s2 = test_syph_epi()
+    # s1, s2 = test_syph_epi()
+
+    s3, s4 = test_hiv_epi()
