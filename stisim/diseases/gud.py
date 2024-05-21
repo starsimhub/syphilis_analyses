@@ -26,6 +26,8 @@ class GUD(ss.Infection):
         self.init_prev_data = init_prev_data
         if init_prev_data is not None:
             self.pars.init_prev = ss.bernoulli(self.make_init_prev_fn)
+
+        # Add states
         self.add_states(
             ss.FloatArr('ti_recovered'),
         )

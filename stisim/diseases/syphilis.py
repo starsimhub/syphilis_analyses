@@ -6,19 +6,21 @@ import numpy as np
 import sciris as sc
 from sciris import randround as rr # Since used frequently
 import starsim as ss
+import stisim as sti
+
 
 __all__ = ['Syphilis']
 
 
 class Syphilis(ss.Infection):
 
-    def __init__(self, pars=None, **kwargs):
+    def __init__(self, pars=None, init_prev_data=None, **kwargs):
         super().__init__()
         self.default_pars(
             # Adult syphilis natural history, all specified in years
-            dur_exposed = ss.lognorm_ex(mean=1 / 12, stdev=1 / 36),  # https://pubmed.ncbi.nlm.nih.gov/9101629/
-            dur_primary = ss.lognorm_ex(mean=1.5 / 12, stdev=1 / 36),  # https://pubmed.ncbi.nlm.nih.gov/9101629/
-            dur_secondary = ss.lognorm_ex(mean=3.6 / 12, stdev=1.5 / 12),  # https://pubmed.ncbi.nlm.nih.gov/9101629/
+            dur_exposed = ss.lognorm_ex(mean=1/52, stdev=1/52),  # https://pubmed.ncbi.nlm.nih.gov/9101629/
+            dur_primary = ss.lognorm_ex(mean=1.5/12, stdev=1/36),  # https://pubmed.ncbi.nlm.nih.gov/9101629/
+            dur_secondary = ss.lognorm_ex(mean=3.6/12, stdev=1.5/12),  # https://pubmed.ncbi.nlm.nih.gov/9101629/
             p_reactivate = ss.bernoulli(p=0.35),  # Probability of reactivating from latent to secondary
             time_to_reactivate = ss.lognorm_ex(mean=1, stdev=1),  # Time to reactivation
             p_tertiary = ss.bernoulli(p=0.35),  # https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4917057/
@@ -33,7 +35,7 @@ class Syphilis(ss.Infection):
             rel_trans_secondary=1,
             rel_trans_latent=0.1,  # Baseline level; this decays exponentially with duration of latent infection
             rel_trans_tertiary=0.0,
-            rel_trans_latent_half_life=10,
+            rel_trans_latent_half_life=1,
 
             # Congenital syphilis outcomes
             # Birth outcomes coded as:
@@ -52,10 +54,16 @@ class Syphilis(ss.Infection):
             birth_outcome_keys=['miscarriage', 'nnd', 'stillborn', 'congenital'],
 
             # Initial conditions
-            init_prev=ss.bernoulli(p=0.03),
+            init_prev=0,
+            rel_init_prev=1,
         )
 
         self.update_pars(pars, **kwargs)
+
+        # Set initial prevalence
+        self.init_prev_data = init_prev_data
+        if init_prev_data is not None:
+            self.pars.init_prev = ss.bernoulli(sti.make_init_prev_fn)
 
         self.add_states(
             # Adult syphilis states
