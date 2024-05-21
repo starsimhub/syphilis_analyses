@@ -143,10 +143,11 @@ def run_syph(location='zimbabwe', total_pop=100e6, dt=1.0, n_agents=500, latent_
 
 def run_gud(location='zimbabwe', total_pop=100e6, dt=1.0, n_agents=500):
 
-    sim_kwargs = make_syph_sim(location=location, total_pop=total_pop, dt=dt, n_agents=n_agents, latent_trans=latent_trans)
-    gud = sti.GUD()
-    gud.pars['beta'] = {'structuredsexual': [0.5, 0.25], 'maternal': 0}
-    gud.pars['init_prev'] = ss.bernoulli(p=0.1)
+    sim_kwargs = make_syph_sim(location=location, total_pop=total_pop, dt=dt, n_agents=n_agents)
+    gud = sti.GUD(
+        beta={'structuredsexual': [0.5, 0.25], 'maternal': 0},
+        init_prev_data=pd.read_csv('data/init_prev.csv')
+    )
     sim_kwargs['diseases'] = gud
     sim = ss.Sim(**sim_kwargs)
     sim.run()
@@ -257,9 +258,12 @@ if __name__ == '__main__':
         zimbabwe=9980999,
     )[location]
 
-
     # sim = run_syph(location=location, total_pop=total_pop, dt=1/12, n_agents=10_000, latent_trans=0.5)
     sim = run_gud(location=location, total_pop=total_pop, dt=1/12, n_agents=10_000)
+    import pylab as pl
+    sim.plot('gud')
+    pl.show()
+
 
     # sc.saveobj(f'sim_{location}.obj', sim)
     # plot_degree(sim)

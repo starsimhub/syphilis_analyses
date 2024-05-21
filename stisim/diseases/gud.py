@@ -5,24 +5,35 @@ Define genital ulcer disease
 import numpy as np
 import sciris as sc
 import starsim as ss
+import stisim as sti
 
 __all__ = ['GUD']
 
 
 class GUD(ss.Infection):
 
-    def __init__(self, pars=None, **kwargs):
+    def __init__(self, pars=None, init_prev_data=None, **kwargs):
         super().__init__()
         self.default_pars(
-            dur_inf = ss.lognorm_ex(mean=2/12, stdev=1/36),
+            dur_inf = ss.lognorm_ex(mean=3/12, stdev=1/12),
             beta=1.0,  # Placeholder
-            init_prev=ss.bernoulli(p=0.4),
+            init_prev=0,  # See make_init_prev_fn
+            rel_init_prev=1,
         )
         self.update_pars(pars, **kwargs)
+
+        # Set initial prevalence
+        self.init_prev_data = init_prev_data
+        if init_prev_data is not None:
+            self.pars.init_prev = ss.bernoulli(self.make_init_prev_fn)
         self.add_states(
             ss.FloatArr('ti_recovered'),
         )
         return
+
+    @staticmethod
+    def make_init_prev_fn(self, sim, uids):
+        return sti.make_init_prev_fn(self, sim, uids)
 
     def update_pre(self):
         """ Updates prior to interventions """
