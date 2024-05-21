@@ -103,7 +103,7 @@ def get_subtargets(subtarget, sim):
 
 # %% Custom interventions
 
-__all__ += ['BaseTest', 'ART', 'DualTest']
+__all__ += ['BaseTest', 'ART']
 
 
 class BaseTest(ss.Intervention):
