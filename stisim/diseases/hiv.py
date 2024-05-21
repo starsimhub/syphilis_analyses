@@ -26,7 +26,7 @@ class HIV(ss.Infection):
             init_prev=ss.bernoulli(p=0.05),
             init_diagnosed=ss.bernoulli(p=0.01),
             dist_ti_init_infected=ss.uniform(low=-10 * 12, high=0),
-
+            p_death=None, # Probability of death (default is to use HIV.death_prob(), otherwise can pass in a Dist or anything supported by ss.bernoulli)
             transmission_sd=0.025,
             primary_acute_inf_dur=2.9,  # in months
             art_efficacy=0.96,
@@ -36,6 +36,13 @@ class HIV(ss.Infection):
         )
 
         self.update_pars(pars, **kwargs)
+
+        if self.pars.p_death is None:
+            self._death_prob = ss.bernoulli(p=self.death_prob)
+        elif isinstance(self.pars.p_death, ss.bernoulli):
+            self._death_prob = self.pars.p_death
+        else:
+            self._death_prob = ss.bernoulli(p=self.pars.p_death)
 
         # States
         self.add_states(
@@ -116,18 +123,11 @@ class HIV(ss.Infection):
     def symptomatic(self):
         return self.infectious
 
-    def make_death_prob(self, uids):
-        """
-        Death probabilities dependent on cd4 counts
-        """
-        death_data = [(range(500, int(np.ceil(np.max(self.cd4_start)))), 0.0 / 12),
-                      (range(350, 500), 0.0 / 12),
-                      (range(200, 350), 0.0 / 12),
-                      (range(50, 200), 0.0 / 12),
-                      (range(0, 50), 0.323 / 12)]
-        death_probs = [probs[1] for probs in death_data for cd4_count in self.cd4[uids] if int(cd4_count) in probs[0]]
-        uids_to_die = uids[np.random.binomial(1, p=death_probs).astype(bool)]  # TODO is there something in distributions.py that can do something similar?
-        return uids_to_die
+    @staticmethod
+    def death_prob(module, sim=None, size=None):
+        cd4_bins = np.array([500, 350, 200, 50, 0])
+        death_prob = np.array([0, 0, 0, 0, 0.323])  # Values smaller than the first bin edge get assigned to the last bin.
+        return death_prob[np.digitize(module.cd4[size], cd4_bins)]
 
     def get_transmission_timecourse(self):
         """
@@ -201,8 +201,7 @@ class HIV(ss.Infection):
         # self.update_mtct(sim)
 
         # Update today's deaths
-        can_die = (self.sim.people.alive & self.infected).uids
-        hiv_deaths = self.make_death_prob(can_die)
+        hiv_deaths = self._death_prob.filter(self.infected.uids)
 
         self.sim.people.request_death(hiv_deaths)
         self.ti_dead[hiv_deaths] = self.sim.ti
