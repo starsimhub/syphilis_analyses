@@ -14,7 +14,6 @@ from syph_tests import TestProb, ANCTesting, LinkedNewbornTesting, TreatNum
 
 
 def make_syph_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, latent_trans=0.075):
-<<<<<<< HEAD
     """ Make a sim with syphilis and genital ulcerative disease """
     syph = sti.Syphilis(
         beta={'structuredsexual': [0.5, 0.25], 'maternal': [0.99, 0]},
@@ -25,13 +24,6 @@ def make_syph_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, late
         beta={'structuredsexual': [0.5, 0.25], 'maternal': 0},
         init_prev_data=pd.read_csv('data/init_prev_gud.csv')
     )
-=======
-    """ Make a sim with syphilis """
-    syph = Syphilis()
-    syph.pars['beta'] = {'structuredsexual': [0.5, 0.25], 'maternal': [0.99, 0]}
-    syph.pars['init_prev'] = ss.bernoulli(p=0.1)
-    syph.pars['rel_trans_latent'] = latent_trans
->>>>>>> main
 
     # Make demographic modules
     fertility_rates = {'fertility_rate': pd.read_csv(f'data/{location}_asfr.csv')}
