@@ -230,21 +230,6 @@ class HIV(ss.Infection):
         self.pars.beta['maternal'][0] = 1-(1-maternal_beta_pmtct) ** (1/9)
         return
 
-    def update_syphilis_trans_sus(self):
-        """
-        Syphilis-positive agents are more likely to be susceptible to HIV and more likely to transmit HIV
-        """
-        ti = self.sim.ti
-        # At each timestep, draw a relative susceptibility for syphilis positive agents from an input distribution.
-        # [The default relative transmission is 1].
-        new_syphilis_pos_uids = (self.syphilis_inf & (self.ti_syphilis_inf == ti)).uids
-        self.rel_sus[new_syphilis_pos_uids] = self.pars.dist_sus_with_syphilis.rvs(len(new_syphilis_pos_uids))
-
-        # At each timestep, multiply the relative transmission of HIV and syphilis positive agents by a factor drawn from the input distribution
-        # to increase the relative transmission.
-        syphilis_hiv_pos_uids = (self.syphilis_inf & self.infected).uids
-        self.rel_trans[syphilis_hiv_pos_uids] = self.rel_trans[syphilis_hiv_pos_uids] * self.pars.dist_trans_with_syphilis.rvs(len(syphilis_hiv_pos_uids))
-        return
 
     def update_cd4_counts(self):
         """
