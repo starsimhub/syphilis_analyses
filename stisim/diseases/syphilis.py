@@ -197,7 +197,7 @@ class Syphilis(ss.Infection):
         dur_latent = ti - self.ti_latent[self.latent]
         hl = self.pars.rel_trans_latent_half_life
         decay_rate = np.log(2) / hl if ~np.isnan(hl) else 0.
-        latent_trans = self.pars.rel_trans_latent * np.exp(-decay_rate * dur_latent*dt)
+        latent_trans = self.pars.rel_trans_latent * np.exp(-decay_rate * dur_latent * dt)
         self.rel_trans[self.latent] = latent_trans
         return
 
@@ -294,30 +294,3 @@ class Syphilis(ss.Infection):
         return
 
 
-#
-# class syph_treatment(ss.treat_num):
-#
-#     def __init__(self, *args, **kwargs):
-#         super().__init__(*args, **kwargs)
-#         # self.requires = Syphilis
-#         return
-#
-#     def _parse_product_str(self, product):
-#         products = load_syph_tx()
-#         if product not in products:
-#             errormsg = f'Could not find treatment product {product} in the standard list ({sc.strjoin(products.keys())})'
-#             raise ValueError(errormsg)
-#         else:
-#             return products[product]
-#
-#     def initialize(self, sim):
-#         super().initialize(sim)
-#         self.results += ss.Result('syphilis', 'n_tx', sim.npts, dtype=int, scale=True)
-#         return
-#
-#     def apply(self, sim):
-#         treat_inds = super().apply(sim)
-#         sim.people.syphilis.infected[treat_inds] = False
-#         self.results['n_tx'][sim.ti] += len(treat_inds)
-#
-#
