@@ -11,11 +11,17 @@ from collections import defaultdict
 
 __all__ = ['HIV']
 
+import stisim as sti
+
 
 class HIV(ss.Infection):
 
+
+
     def __init__(self, pars=None, **kwargs):
         super().__init__()
+
+        self.requires = sti.StructuredSexual
 
         # Parameters
         self.default_pars(
