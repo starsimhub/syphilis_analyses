@@ -14,7 +14,7 @@ class SyphilisPlaceholder(ss.Disease):
     # A simple placeholder module to use when testing connectors
 
     def __init__(self, pars=None, **kwargs):
-        super().__init__()
+        super().__init__(name='syphilis')
 
         self.default_pars(
             prevalence=0.1,
