@@ -9,20 +9,29 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import sciris as sc
 import stisim as sti
+
 from stisim.networks import StructuredSexual
 from stisim.diseases.syphilis import Syphilis
+from syph_tests import TestProb, ANCTesting, LinkedNewbornTesting, TreatNum
+import stisim as sti
 
 quick_run = False
 ss.options['multirng']=False
 datadir = sti.root/'analyses'/'data'
 
 
+
 def make_syph_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, latent_trans=0.075):
-    """ Make a sim with syphilis """
-    syph = Syphilis()
-    syph.pars['beta'] = {'structuredsexual': [0.5, 0.25], 'maternal': [0.99, 0]}
-    syph.pars['init_prev'] = ss.bernoulli(p=0.1)
-    syph.pars['rel_trans_latent'] = latent_trans
+    """ Make a sim with syphilis and genital ulcerative disease """
+    syph = sti.Syphilis(
+        beta={'structuredsexual': [0.5, 0.25], 'maternal': [0.99, 0]},
+        init_prev_data=pd.read_csv(sti.data/'init_prev_syph.csv'),
+        rel_trans_latent=latent_trans
+    )
+    gud = sti.GUD(
+        beta={'structuredsexual': [0.5, 0.25], 'maternal': 0},
+        init_prev_data=pd.read_csv(sti.data/'init_prev_gud.csv')
+    )
 
     # Make demographic modules
     fertility_rates = {'fertility_rate': pd.read_csv(sti.data/f'{location}_asfr.csv')}
@@ -42,7 +51,7 @@ def make_syph_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, late
         start=1990,
         n_years=40,
         people=ppl,
-        diseases=syph,
+        diseases=[syph, gud],
         networks=ss.ndict(sexual, maternal),
         demographics=[pregnancy, death],
     )
@@ -50,9 +59,97 @@ def make_syph_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, late
     return sim_kwargs
 
 
-def run_syph(location='zimbabwe', total_pop=100e6, dt=1.0, n_agents=500):
+def make_testing_intvs():
+
+    # Initialize interventions
+    interventions = sc.autolist()
+
+    # Read in testing probabilities and create an intervention representing the
+    # initial visit/consult - this uses risk group/sex/year-specific testing rates
+    # representing the probability of someone with symptoms seeking care
+    symp_test_data = pd.read_csv(sti.data/'symp_test_prob.csv')
+    symp_test = TestProb(
+        product='symp_test_assigner',
+        test_prob_data=symp_test_data,
+        name='symp_test',
+        label='symp_test',
+    )
+
+    # Funnel all symptomatic people into different management options
+    # This is a way of representing the market share or product mix.
+    synd_el = lambda sim: sim.get_intervention('symp_test').outcomes['syndromic']
+    synd_mgmt = TestProb(product='syndromic', test_prob_data=1, eligibility=synd_el, name='synd_mgmt', label='synd_mgmt')
+    dual_el = lambda sim: sim.get_intervention('symp_test').outcomes['dual']
+    dual_test = TestProb(product='dual', test_prob_data=1, eligibility=dual_el, name='dual_test', label='dual_test')
+    rst_el = lambda sim: sim.get_intervention('symp_test').outcomes['rst']
+    rst = TestProb(product='rst', test_prob_data=1, eligibility=rst_el, name='rst', label='rst')
+
+    # Add ANC testing
+    anc_test_data = np.array([0.05]*31)
+    test_years = np.arange(2000, 2031)
+    anc = ANCTesting(product='rst', test_prob_data=anc_test_data, years=test_years, name='anc', label='anc')
+
+    interventions += [symp_test, synd_mgmt, dual_test, rst, anc]
+
+    # Some proportion of those who are probable syphilis cases will be given a confirmatory test
+    def all_pos(sim):
+        pos_list = sc.autolist()
+        pos_list += sim.get_intervention('synd_mgmt').outcomes['positive'].tolist()
+        pos_list += sim.get_intervention('dual_test').outcomes['positive'].tolist()
+        pos_list += sim.get_intervention('rst').outcomes['positive'].tolist()
+        pos_list += sim.get_intervention('anc').outcomes['positive'].tolist()
+        return ss.uids(np.array(list(set(pos_list))))
+    pos_mgmt = TestProb(product='pos_assigner', test_prob_data=.5, eligibility=all_pos, name='pos_mgmt', label='pos_mgmt')
+    rpr_el = lambda sim: sim.get_intervention('pos_mgmt').outcomes['rpr']
+    rpr = TestProb(product='rpr', test_prob_data=1, eligibility=rpr_el, name='rpr', label='rpr')
+
+    interventions += [pos_mgmt, rpr]
+
+    # Treatment
+    def to_treat(sim):
+        pos_list = sc.autolist()
+        pos_list += sim.get_intervention('rpr').outcomes['positive'].tolist()
+        pos_list += sim.get_intervention('pos_mgmt').outcomes['treat'].tolist()
+        return ss.uids(np.array(list(set(pos_list))))
+
+    treat_data = pd.read_csv(sti.data/'treat_prob.csv')
+    max_capacity = np.array([50_000]*31)
+    treat_years = np.arange(2000, 2031)
+    treat = TreatNum(
+        treat_prob_data=treat_data,
+        max_capacity=max_capacity,
+        years=treat_years,
+        eligibility=to_treat,
+        name='treat',
+        label='treat',
+    )
+    interventions += treat
+
+    # Newborn testing
+    newborn_test = LinkedNewbornTesting(product='newborn_exam', test_prob_data=0.1)
+    interventions += newborn_test
+
+    return interventions
+
+
+def run_syph(location='zimbabwe', total_pop=100e6, dt=1.0, n_agents=500, latent_trans=0.1):
+
+    sim_kwargs = make_syph_sim(location=location, total_pop=total_pop, dt=dt, n_agents=n_agents, latent_trans=latent_trans)
+    interventions = make_testing_intvs()
+    sim = ss.Sim(interventions=interventions, **sim_kwargs)
+    sim.run()
+
+    return sim
+
+
+def run_gud(location='zimbabwe', total_pop=100e6, dt=1.0, n_agents=500):
 
     sim_kwargs = make_syph_sim(location=location, total_pop=total_pop, dt=dt, n_agents=n_agents)
+    gud = sti.GUD(
+        beta={'structuredsexual': [0.5, 0.25], 'maternal': 0},
+        init_prev_data=pd.read_csv(sti.data/'init_prev.csv')
+    )
+    sim_kwargs['diseases'] = gud
     sim = ss.Sim(**sim_kwargs)
     sim.run()
 
@@ -161,12 +258,16 @@ if __name__ == '__main__':
         nigeria=93963392,
         zimbabwe=9980999,
     )[location]
-    sim = run_syph(location=location, total_pop=total_pop, dt=1/12, n_agents=int(10e3))
-    sc.saveobj(f'sim_{location}.obj', sim)
 
-    plot_degree(sim)
-    plot_mixing(sim)
-    plot_syph(sim)
+    sim = run_syph(location=location, total_pop=total_pop, dt=1/12, n_agents=10_000, latent_trans=0.1)
+    import pylab as pl
+    sim.plot('gud')
+    pl.show()
+
+    # sc.saveobj(f'sim_{location}.obj', sim)
+    # plot_degree(sim)
+    # plot_mixing(sim)
+    # plot_syph(sim)
 
     # sim = sc.loadobj('sim.obj')
 

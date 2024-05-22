@@ -354,15 +354,16 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
     ####################################################################################################################
     # HIV Params
     ####################################################################################################################
-    hiv = HIV()
-    hiv.pars['beta'] = {'structuredsexual': [0.95, 0.95], 'maternal': [0.95, 0.]}
-    hiv.pars['init_prev'] = ss.bernoulli(p=0.15) #ss.bernoulli(p=0.15)
-    hiv.pars['cd4_start_dist'] = ss.normal(loc=800, scale=10)
-    hiv.pars['init_diagnosed'] = ss.bernoulli(p=0.15)  # Proportion of initially infected agents who start out as diagnosed
-    hiv.pars['primary_acute_inf_dur'] = 2.9  # in months
-    hiv.pars['transmission_sd'] = 0.0  # Standard Deviation of normal distribution for randomness in transmission.
-    hiv.pars['dist_sus_with_syphilis'] = ss.normal(loc=1.5, scale=0.25) # TODO Data?
-    hiv.pars['dist_trans_with_syphilis'] = ss.normal(loc=1.5, scale=0.025) # TODO Data? 
+    hiv = HIV(
+        beta={'structuredsexual': [0.008, 0.004], 'maternal': [0.05, 0.]},
+        init_prev=0.15,
+        cd4_start_dist=ss.normal(loc=800, scale=10),
+        init_diagnosed=ss.bernoulli(p=0.15),  # Proportion of initially diagnose agents who start out as diagnosed
+        primary_acute_inf_dur=2.9,  # in months
+        transmission_sd=0.0,  # Standard Deviation of normal distribution for randomness in transmission.
+        dist_sus_with_syphilis=ss.normal(loc=1.5, scale=0.25),  # TODO Data?
+        dist_trans_with_syphilis=ss.normal(loc=1.5, scale=0.025) # TODO Data?
+    )
     tivec = np.arange(start=1990, stop=2021 + 1 / 12, step=1 / 12)
 
     ####################################################################################################################
