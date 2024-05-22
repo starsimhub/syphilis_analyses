@@ -17,7 +17,7 @@ class SyphilisPlaceholder(ss.Disease):
         super().__init__(name='syphilis')
 
         self.default_pars(
-            prevalence=0.1,
+            prevalence=0.1, # Target prevalance. If None, no automatic infections will be applied
         )
         self.update_pars(pars, **kwargs)
         self.add_states(
@@ -36,11 +36,16 @@ class SyphilisPlaceholder(ss.Disease):
             ts = self.pars.prevalence
         self._target_prevalence = ts.interpolate(sim.yearvec)
 
+    def set_prognoses(self, target_uids, source_uids=None):
+        self.active[target_uids] = True
 
     def update_pre(self):
         """
         When using a connector to the syphilis module, this is not needed. The connector should update the syphilis-positive state.
         """
+
+        if self.pars.prevalence is None:
+            return
 
         sim = self.sim
 
@@ -59,8 +64,6 @@ class SyphilisPlaceholder(ss.Disease):
             uids = self.active.true()
             self._prev_dist.set(p=-change/(len(uids)/len(sim.people)))
             self.active[self._prev_dist.filter(uids)] = False
-
-
 
 
 class Syphilis(ss.Infection):

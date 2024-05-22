@@ -232,7 +232,7 @@ class StructuredSexual(ss.SexualNetwork):
         m_eligible = m_active & underpartnered
         f_looking = self.pars.p_pair_form.filter(f_eligible.uids)  # ss.uids of women looking for partners
 
-        if len(f_looking) == 0 or len(m_eligible) == 0:
+        if len(f_looking) == 0 or m_eligible.count() == 0:
             raise NoPartnersFound()
 
         # Get mean age differences and desired ages
