@@ -19,6 +19,10 @@ ss_float_ = ss.dtypes.float
 # Specify all externally visible functions this file defines; see also more definitions below
 __all__ = ['StructuredSexual']
 
+class NoPartnersFound(Exception):
+    # Raise this exception if the matching algorithm wasn't able to match any partners
+    pass
+
 
 class StructuredSexual(ss.SexualNetwork):
     """
@@ -228,6 +232,9 @@ class StructuredSexual(ss.SexualNetwork):
         m_eligible = m_active & underpartnered
         f_looking = self.pars.p_pair_form.filter(f_eligible.uids)  # ss.uids of women looking for partners
 
+        if len(f_looking) == 0 or m_eligible.count() == 0:
+            raise NoPartnersFound()
+
         # Get mean age differences and desired ages
         age_gaps = self.pars.age_diffs.rvs(f_looking)   # Sample the age differences
         desired_ages = ppl.age[f_looking] + age_gaps    # Desired ages of the male partners
@@ -258,7 +265,11 @@ class StructuredSexual(ss.SexualNetwork):
         """ Add pairs """
         ppl = self.sim.people
         dt = self.sim.dt
-        p1, p2 = self.match_pairs(ppl)
+
+        try:
+            p1, p2 = self.match_pairs(ppl)
+        except NoPartnersFound:
+            return
 
         # Initialize beta, acts, duration
         beta = pd.Series(1., index=p2)

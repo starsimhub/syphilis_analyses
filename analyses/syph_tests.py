@@ -15,7 +15,7 @@ def load_syph_dx():
     """
     Create default diagnostic products
     """
-    df = sc.dataframe.read_csv('data/syph_dx.csv')
+    df = sc.dataframe.read_csv(sti.data/'syph_dx.csv')
     hierarchy = ['positive', 'inadequate', 'negative']
     dxprods = dict(
         rpr = ss.Dx(df[df.name == 'rpr'], hierarchy=hierarchy),

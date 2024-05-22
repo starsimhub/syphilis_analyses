@@ -8,8 +8,62 @@ from sciris import randround as rr # Since used frequently
 import starsim as ss
 import stisim as sti
 
+__all__ = ['Syphilis','SyphilisPlaceholder']
 
-__all__ = ['Syphilis']
+class SyphilisPlaceholder(ss.Disease):
+    # A simple placeholder module to use when testing connectors
+
+    def __init__(self, pars=None, **kwargs):
+        super().__init__(name='syphilis')
+
+        self.default_pars(
+            prevalence=0.1, # Target prevalance. If None, no automatic infections will be applied
+        )
+        self.update_pars(pars, **kwargs)
+        self.add_states(
+            ss.BoolArr('active'), # Active syphilis
+            ss.FloatArr('ti_active'), # Time of active syphilis
+        )
+        self._prev_dist = ss.bernoulli(p=0)
+
+        return
+
+    def initialize(self, sim):
+        super().initialize(sim)
+        if not isinstance(self.pars.prevalence, sti.TimeSeries):
+            ts = sti.TimeSeries(assumption=self.pars.prevalence)
+        else:
+            ts = self.pars.prevalence
+        self._target_prevalence = ts.interpolate(sim.yearvec)
+
+    def set_prognoses(self, target_uids, source_uids=None):
+        self.active[target_uids] = True
+
+    def update_pre(self):
+        """
+        When using a connector to the syphilis module, this is not needed. The connector should update the syphilis-positive state.
+        """
+
+        if self.pars.prevalence is None:
+            return
+
+        sim = self.sim
+
+        # Get current prevalence
+        n_active = self.active.count()
+        prev = n_active/len(sim.people)
+        target = self._target_prevalence[sim.ti]
+        change = target-prev
+
+        if change > 0:
+            # Add a proportion of people that are not infected
+            uids = self.active.false()
+            self._prev_dist.set(p=change/(len(uids)/len(sim.people)))
+            self.active[self._prev_dist.filter(uids)] = True
+        elif change < 0:
+            uids = self.active.true()
+            self._prev_dist.set(p=-change/(len(uids)/len(sim.people)))
+            self.active[self._prev_dist.filter(uids)] = False
 
 
 class Syphilis(ss.Infection):
