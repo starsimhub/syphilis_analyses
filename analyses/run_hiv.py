@@ -356,11 +356,11 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
     ####################################################################################################################
     hiv = HIV(
         beta={'structuredsexual': [0.008, 0.004], 'maternal': [0.05, 0.]},
-        init_prev=0.15,
-        cd4_start_dist=ss.normal(loc=800, scale=10),
+        # init_prev=0.15,
+        # cd4_start=ss.normal(loc=800, scale=10),
         init_diagnosed=ss.bernoulli(p=0.15),  # Proportion of initially diagnose agents who start out as diagnosed
-        primary_acute_inf_dur=2.9,  # in months
-        transmission_sd=0.0,  # Standard Deviation of normal distribution for randomness in transmission.
+        # primary_acute_inf_dur=2.9,  # in months
+        # transmission_sd=0.0,  # Standard Deviation of normal distribution for randomness in transmission.
         dist_sus_with_syphilis=ss.normal(loc=1.5, scale=0.25),  # TODO Data?
         dist_trans_with_syphilis=ss.normal(loc=1.5, scale=0.025) # TODO Data?
     )
@@ -379,6 +379,7 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
                                                          ART_coverages_raw.index.astype(int).tolist(),
                                                          (ART_coverages_raw.values / 100).tolist()))})
 
+    # import traceback; traceback.print_exc(); import pdb; pdb.set_trace()
     hiv.pars['ART_coverages_df'] = ART_coverages_df
 
     ####################################################################################################################
@@ -416,9 +417,9 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
         interventions=[fsw_testing,
                        other_testing,
                        low_cd4_testing,
-                       ART(ART_coverages_df=ART_coverages_df,
-                           duration_on_ART=ss.normal(loc=18, scale=5),  # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
-                           art_efficacy=0.96),
+                       # ART(ART_coverages_df=ART_coverages_df,
+                       #     duration_on_ART=ss.normal(loc=18, scale=5),  # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
+                       #     art_efficacy=0.96),
                        validate_ART(disease='hiv',
                                     uids=save_agents,
                                     infect_uids_t=np.repeat(200, len(save_agents)),

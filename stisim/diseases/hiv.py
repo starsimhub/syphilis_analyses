@@ -19,18 +19,26 @@ class HIV(ss.Infection):
 
         # Parameters
         self.default_pars(
-            cd4_start_dist=ss.normal(loc=800, scale=10),
-            cd4_min=100,
-            cd4_max=500,
-            cd4_rate=5,
+            cd4_start=ss.normal(loc=800, scale=50),
+            cd4_latent=ss.normal(loc=500, scale=50),
+            # cd4_min=100,
+            # cd4_max=500,
+            # cd4_rate=5,
             init_prev=ss.bernoulli(p=0.05),
+            dur_acute=ss.lognorm_ex(3/12, 1/12),    # Duration of acute HIV infection
+            dur_latent=ss.lognorm_ex(12, 3),        # Duration of latent, untreated HIV infection
+            dur_falling=ss.lognorm_ex(3, 1),        # Duration of late-stage HIV when CD4 counts fall
+
+            rel_trans_acute=ss.normal(loc=6, scale=0.5),  # Increase transmissibility during acute HIV infection
+            rel_trans_falling=ss.normal(loc=8, scale=0.5),  # Increase transmissibility during acute HIV infection
+
             init_diagnosed=ss.bernoulli(p=0.01),
             dist_ti_init_infected=ss.uniform(low=-10 * 12, high=0),
             dist_sus_with_syphilis=ss.normal(loc=1.5, scale=0.25),
             dist_trans_with_syphilis=ss.normal(loc=1.2, scale=0.025),
-            transmission_sd=0.025,
-            syphilis_prev=0.05,
-            primary_acute_inf_dur=2.9,  # in months
+            # transmission_sd=0.025,
+            # syphilis_prev=0.05,
+            # primary_acute_inf_dur=2.9,  # in months
             art_efficacy=0.96,
             maternal_beta_pmtct_df=None,
             pmtct_coverages_df=None,
@@ -41,18 +49,29 @@ class HIV(ss.Infection):
 
         # States
         self.add_states(
+            ss.FloatArr('ti_acute'),
+            ss.BoolArr('acute'),
+            ss.FloatArr('ti_latent'),
+            ss.BoolArr('latent'),
+            ss.FloatArr('ti_falling'),
+            ss.BoolArr('falling'),
+            ss.FloatArr('ti_reset_cd4'),  # Time of last CD4-changing event: infection, ART initiation, or ART cessation
+
             ss.BoolArr('syphilis_inf'),
             ss.FloatArr('ti_syphilis_inf'),
+
+            # Treatment states
             ss.BoolArr('on_art'),
             ss.FloatArr('art_transmission_reduction'),  # Reduction in transmission dependent on initial cd4 count
             ss.FloatArr('ti_art'),
             ss.FloatArr('ti_stop_art'),
             ss.FloatArr('cd4_start'),  # Initial cd4 count for each agent before an infection
+            ss.FloatArr('cd4_latent'),  # CD4 count during latent infection
             ss.FloatArr('cd4'),  # Current CD4 count
             ss.FloatArr('ti_dead'),  # Time of HIV-cause death
             ss.BoolArr('diagnosed'),
             ss.FloatArr('ti_diagnosed'),
-            ss.FloatArr('ti_since_untreated')  # This is needed for agents who start, stop and restart ART
+            ss.FloatArr('dur_untreated')  # This is needed for agents who start, stop and restart ART
         )
 
         self._pending_ARTtreatment = defaultdict(list)
@@ -65,56 +84,47 @@ class HIV(ss.Infection):
         Initialize
         """
         super().initialize(sim)
-        self.pars.transmission_timecourse = self.get_transmission_timecourse()
+        # self.pars.transmission_timecourse = self.get_transmission_timecourse()
         self.initial_hiv_maternal_beta = self.pars.beta['maternal'][0]
 
         return
 
     def init_vals(self):
-        ti = self.sim.ti
-        alive_uids = self.sim.people.auids
-        initial_cases = self.pars.init_prev.filter(alive_uids)
+        # super().init_vals()
+
+        # Set initial CD4
+        self.init_cd4()
+
+        # Make initial cases, some of which may have occured prior to the sim start
+        initial_cases = self.pars.init_prev.filter()
+        ti_init_cases = self.pars.dist_ti_init_infected.rvs(initial_cases).astype(int)
+        self.set_prognoses(initial_cases, ti=ti_init_cases)
         initial_cases_diagnosed = self.pars.init_diagnosed.filter(initial_cases)
-        self.susceptible[initial_cases] = False
-        self.infected[initial_cases] = True
         self.diagnosed[initial_cases_diagnosed] = True
 
-        # Assume initial cases were infected up to 10 years ago
-        self.ti_infected[initial_cases] = self.pars.dist_ti_init_infected.rvs(len(initial_cases)).astype(int)
-        self.ti_since_untreated[initial_cases] = self.ti_infected[initial_cases]
-
-        # Update CD4 counts for initial cases
-        self.pars.viral_timecourse, self.pars.cd4_timecourse = self.get_viral_dynamics_timecourses()
-        duration_since_untreated = ti - self.ti_since_untreated[initial_cases]
-        duration_since_untreated = np.minimum(duration_since_untreated, len(self.pars.cd4_timecourse) - 1).astype(int)
-        self.cd4_start[initial_cases] = self.pars.cd4_start_dist.rvs(initial_cases)  #TODO update to positive normal distribution
-        self.cd4[initial_cases] = self.cd4_start[initial_cases] * self.pars.cd4_timecourse[duration_since_untreated]
-
-        # Update transmission
-        # Assumption: Transmission is at 1 for agents with cd4 count >200, else at 6
-        self.pars.transmission_timecourse = self.get_transmission_timecourse()
-        self.rel_trans[initial_cases] = 1
-        duration_since_infection = ti - self.ti_infected[initial_cases]
-        duration_since_infection = np.minimum(duration_since_infection, len(self.pars.cd4_timecourse) - 1).astype(int)
-        duration_since_infection_transmission = np.minimum(duration_since_infection, len(self.pars.transmission_timecourse) - 1).astype(int)
-
-        # Update transmission for agents with a cd4 count >=200:
-        infected_uids_not_onART_cd4_above_200 = self.cd4[initial_cases] >= 200
-        infected_uids_not_onART_cd4_above_200_uids = initial_cases[infected_uids_not_onART_cd4_above_200]
-        transmission_not_onART_cd4_above_200 = self.pars.transmission_timecourse[duration_since_infection_transmission[infected_uids_not_onART_cd4_above_200]]
-        # Randomize:
-        self.rel_trans[ss.uids(infected_uids_not_onART_cd4_above_200_uids)] = transmission_not_onART_cd4_above_200
-        # Update transmission for agents with a cd4 count <200
-        uids_below_200 = initial_cases[self.cd4[initial_cases] < 200]
-        # Calculate how many momths the agent has been <200 counts to get the correct transmission:
-        cd4_count_changes = np.diff(self.pars.cd4_timecourse)
-        if len(uids_below_200) > 0:
-            ti_200_to_50 = (150 / (cd4_count_changes[-1] * self.cd4_start[uids_below_200]) * (-1)).astype(int)
-            ti_under200 = (200 - self.cd4[uids_below_200]) / (-1 * cd4_count_changes[-1] * self.cd4_start[uids_below_200])
-            transmission_below_200 = np.minimum(self.rel_trans[uids_below_200] + ti_under200 * ((6-1) / ti_200_to_50), 6)
-            self.rel_trans[uids_below_200] = transmission_below_200
-
         return
+
+    def acute_decline(self, uids):
+        """ Acute decline in CD4 """
+        acute_start = self.ti_acute[uids] - self.sim.ti
+        acute_end = self.ti_latent[uids]
+        acute_dur = acute_end - acute_start
+        cd4_start = self.cd4_start[uids]
+        cd4_end = self.cd4_latent[uids]
+        per_timestep_decline = (cd4_start-cd4_end)/acute_dur
+        cd4 = cd4_start + per_timestep_decline*acute_start
+        return cd4
+
+    def falling_decline(self, uids):
+        """ Decline in CD4 during late-stage infection, when counts are falling """
+        falling_start = self.ti_falling[uids] - self.sim.ti
+        falling_end = self.ti_dead[uids]
+        falling_dur = falling_end - falling_start
+        cd4_start = self.cd4_latent[uids]
+        cd4_end = 0
+        per_timestep_decline = (cd4_start-cd4_end)/falling_dur
+        cd4 = cd4_start + per_timestep_decline*falling_start
+        return cd4
 
     @property
     def symptomatic(self):
@@ -133,57 +143,18 @@ class HIV(ss.Infection):
         uids_to_die = uids[np.random.binomial(1, p=death_probs).astype(bool)]  # TODO is there something in distributions.py that can do something similar?
         return uids_to_die
 
-    def get_transmission_timecourse(self):
-        """
-        Define transmission time course
-        """
-        transmission_timecourse_data = [(0, 0),
-                                        (1, 6),
-                                        (self.pars.primary_acute_inf_dur, 6),
-                                        (np.ceil(self.pars.primary_acute_inf_dur), 1)]
-        transmission_timecourse = self._interpolate(transmission_timecourse_data,
-                                                    np.arange(0, np.ceil(self.pars.primary_acute_inf_dur) + 1))
-
-        return transmission_timecourse
-
-    def get_viral_dynamics_timecourses(self):
-        """
-        Define viral dynamic time courses for viral load and CD4 counts
-        """
-        # Viral load increases based on Figure 1B in https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6155466/
-        # TODO Currently not needed
-        viral_load_timecourse_data = [(0, 0), (0.5, 1), (1, (10 ** 4.5) / 1e6), (4 * 12, (10 ** 4.5) / 1e6),
-                                      (8 * 12, 1)]  # in months
-
-        # CD4 count decrease based on Figure 1A in https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6155466/
-        # Assumption
-        # 100% at month 0
-        # 60% at month 0.5
-        # 70% at months 1 - 12
-        # Linear decrease from 70% to 0 after 10 years
-        cd4_timecourse_data = [(0, 1), (0.5, 600 / 1000), (1, 700 / 1000), (1 * 12, 700 / 1000),
-                               (10 * 12, 0)]  # in months
-
-        viral_load_timecourse = self._interpolate(viral_load_timecourse_data, np.arange(0, 8 * 12))
-        cd4_timecourse = self._interpolate(cd4_timecourse_data, np.arange(0, 10 * 12 + 1))
-
-        return viral_load_timecourse, cd4_timecourse
-
     @staticmethod
     def _interpolate(vals: list, t):
         vals = sorted(vals, key=lambda x: x[0])  # Make sure values are sorted
         assert len({x[0] for x in vals}) == len(vals)  # Make sure time points are unique
         return np.interp(t, [x[0] for x in vals], [x[1] for x in vals], left=vals[0][1], right=vals[-1][1])
 
-    def update_cd4_starts(self):
+    def init_cd4(self):
         """
-        Update initial CD4 counts for new agents
+        Set CD4 counts
         """
-        uids = self.cd4_start.auids[pd.isna(self.cd4_start.values)]
-        values = self.pars.cd4_start_dist.rvs(len(uids))
-        self.cd4_start.set(ss.uids(uids), values)
-        self.cd4.set(ss.uids(uids), values)
-
+        uids = ss.uids(self.cd4_start.isnan)
+        self.cd4_start[uids] = self.pars.cd4_start.rvs(uids)
         return
 
     def update_syphilis_prev(self):
@@ -210,26 +181,51 @@ class HIV(ss.Infection):
         self.ti_syphilis_inf[uids] = sim.ti
         return
 
-
     def update_pre(self):
         """
         Carry out autonomous updates at the start of the timestep (prior to transmission)
         """
+        ti = self.sim.ti
 
         # Update relative transmissibiltiy and susceptibility based on syphilis prevalence
         self.update_syphilis_prev()
 
-        # Update cd4 start for new agents:
-        self.update_cd4_starts()
+        # Update rel_trans to account for acute infection
+        self.rel_trans[self.acute] *= self.pars.rel_trans_acute.rvs(self.acute.uids)
 
-        # Update cd4 counts:
-        self.update_cd4_counts()
+        # Set initial cd4 counts for new agents:
+        self.init_cd4()
+
+        # Update states for people not on ART
+        # Acute & not on ART
+        acute = self.acute & ~self.on_art
+        self.cd4[acute.uids] = self.acute_decline(acute.uids)
+
+        # Latent & not on ART
+        latent = self.acute & (self.ti_latent <= ti)
+        self.acute[latent] = False
+        self.latent[latent] = True
+
+        untreated_latent = latent & ~self.on_art
+        self.cd4[untreated_latent.uids] = self.cd4_latent[untreated_latent.uids]
+
+        # Falling & not on ART
+        falling = self.latent & (self.ti_falling <= ti)
+        self.latent[falling] = False
+        self.falling[falling] = True
+
+        untreated_falling = falling & ~self.on_art
+        self.cd4[untreated_falling.uids] = self.falling_decline(untreated_falling.uids)
+
+        # # Update states for people on ART
+        # # Acute & on ART
+        # acute_art = self.acute & self.on_art
 
         # Update today's transmission
-        self.update_transmission()
+        # self.update_transmission()
 
         # Update transmission and susceptibility for syphilis-positive agents
-        self.update_syphilis_trans_sus()
+        # self.update_syphilis_trans_sus()
 
         # Update MTCT - not needed anymore because of ART intervention??
         # self.update_mtct(sim)
@@ -275,19 +271,70 @@ class HIV(ss.Infection):
         self.rel_trans[syphilis_hiv_pos_uids] = self.rel_trans[syphilis_hiv_pos_uids] * self.pars.dist_trans_with_syphilis.rvs(len(syphilis_hiv_pos_uids))
         return
 
-    def update_cd4_counts(self):
+    def cd4_decline(self, uids):
+        """ Dynamics of CD4 decline for PLHIV not on ART """
+        import traceback; traceback.print_exc(); import pdb; pdb.set_trace()
+
+        cd4_timecourse_data = [(0, 1), (0.5, 600 / 1000), (1, 700 / 1000), (1 * 12, 700 / 1000),
+                               (10 * 12, 0)]  # in months
+
+        # viral_load_timecourse = self._interpolate(viral_load_timecourse_data, np.arange(0, 8 * 12))
+        cd4_timecourse = self._interpolate(cd4_timecourse_data, np.arange(0, 10 * 12 + 1))
+
+        return
+
+    # def decrease_cd4(self):
+    #     """ Decrease CD4 count for those not on ART """
+    #     ti = self.sim.ti
+    #     inf_off_art = self.infected & ~self.on_art
+    #
+    #     # Update states for initial cases
+    #     is_acute = np.nonzero((self.ti_latent[inf_off_art] > ti) & (self.ti_acute[inf_off_art] < ti))[-1]
+    #     is_latent = np.nonzero((self.ti_latent[inf_off_art] < ti) & (self.ti_falling[inf_off_art] > ti))[-1]
+    #     is_falling = np.nonzero((self.ti_falling[inf_off_art] < ti))[-1]
+    #     acute_uids = inf_off_art[is_acute]
+    #     latent_uids = inf_off_art[is_latent]
+    #     falling_uids = inf_off_art[is_falling]
+    #
+    #     # Acute
+    #     self.acute_decline(acute_uids)
+    #
+    #     # Latent
+    #     self.cd4[latent_uids] = self.cd4_latent[latent_uids]
+    #     self.latent[latent_uids] = True
+    #     self.acute[latent_uids] = False
+    #
+    #     # Falling
+    #     self.acute[falling_uids] = False
+    #     self.latent[falling_uids] = False
+    #     self.falling[falling_uids] = True
+    #     self.falling_decline(falling_uids)
+    #
+    #     return
+
+    def update_cd4(self):
         """
-        Update today's CD4 counts
+        Update CD4 counts
         """
         sim = self.sim
-        infected_uids_onART = sim.people.alive & self.infected & self.on_art
-        infected_uids_not_onART = sim.people.alive & self.infected & ~self.on_art
+        ti = self.sim.ti
 
-        duration_since_untreated = sim.ti - self.ti_since_untreated[infected_uids_not_onART]
-        self.pars.viral_timecourse, self.pars.cd4_timecourse = self.get_viral_dynamics_timecourses()
-        duration_since_untreated = np.minimum(duration_since_untreated, len(self.pars.cd4_timecourse) - 1).astype(int)
-        duration_since_onART = sim.ti - self.ti_art[infected_uids_onART]
+        import traceback; traceback.print_exc(); import pdb; pdb.set_trace()
+        acute_offART = self.acute & ~self.on_art & self.ti_reset_cd4
 
+
+
+
+        inf_onART = self.infected & self.on_art
+        inf_offART = self.infected & ~self.on_art
+
+        # Update people off ART
+        dur_untreated = sim.ti - self.ti_stop_art[inf_offART]
+        self.pars.cd4_timecourse = self.get_viral_dynamics_timecourses()
+        duration_since_untreated = np.minimum(dur_untreated, len(self.pars.cd4_timecourse) - 1).astype(int)
+
+        # Update people on ART
+        duration_since_onART = sim.ti - self.ti_art[inf_onART]
         duration_since_onART = np.minimum(duration_since_onART, 3 * 12)
 
         cd4_count_changes = np.diff(self.pars.cd4_timecourse)
@@ -415,17 +462,39 @@ class HIV(ss.Infection):
         super().make_new_cases()
         return
 
-    def set_prognoses(self, uids, source_uids=None):
+    def set_prognoses(self, uids, source_uids=None, ti=None):
         """
         Set prognoses upon infection
         """
-        super().set_prognoses(uids, source_uids)
-        ti = self.sim.ti
+        # super().set_prognoses(uids, source_uids)
+        if ti is None:
+            ti = self.sim.ti
+        else:
+            # Check that ti is consistent with uids
+            if not (sc.isnumber(ti) or len(ti) == len(uids)):
+                errormsg = 'ti for set_prognoses must be int or array of length uids'
+                raise ValueError(errormsg)
+
+        dt = self.sim.dt
 
         self.susceptible[uids] = False
         self.infected[uids] = True
+        self.acute[uids] = True
+
         self.ti_infected[uids] = ti
-        self.ti_since_untreated[uids] = ti
+        self.ti_acute[uids] = ti
+        self.ti_reset_cd4[uids] = ti
+
+        # Set timing and CD4 count of latent infection
+        dur_acute = self.pars.dur_acute.rvs(uids)
+        self.ti_latent[uids] = self.ti_acute[uids] + (dur_acute / dt).astype(int)
+        self.cd4_latent[uids] = self.pars.cd4_latent.rvs(uids)
+
+        # Set time of onset of late-stage CD4 decline
+        dur_latent = self.pars.dur_latent.rvs(uids)
+        self.ti_falling[uids] = self.ti_latent[uids] + (dur_latent / dt).astype(int)
+        dur_falling = self.pars.dur_falling.rvs(uids)
+        self.ti_dead[uids] = self.ti_falling[uids] + (dur_falling / dt).astype(int)
 
         return
 
