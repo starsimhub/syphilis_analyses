@@ -361,8 +361,6 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
         init_diagnosed=ss.bernoulli(p=0.15),  # Proportion of initially diagnose agents who start out as diagnosed
         # primary_acute_inf_dur=2.9,  # in months
         # transmission_sd=0.0,  # Standard Deviation of normal distribution for randomness in transmission.
-        dist_sus_with_syphilis=ss.normal(loc=1.5, scale=0.25),  # TODO Data?
-        dist_trans_with_syphilis=ss.normal(loc=1.5, scale=0.025) # TODO Data?
     )
     tivec = np.arange(start=1990, stop=2021 + 1 / 12, step=1 / 12)
 
@@ -412,17 +410,19 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
         people=ppl,
         diseases=hiv,
         networks=ss.ndict(sexual, maternal),
-        interventions=[fsw_testing,
-                       other_testing,
-                       low_cd4_testing,
-                       # ART(ART_coverages_df=ART_coverages_df,
-                       #     duration_on_ART=ss.normal(loc=18, scale=5),  # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
-                       #     art_efficacy=0.96),
-                       validate_ART(disease='hiv',
-                                    uids=save_agents,
-                                    infect_uids_t=np.repeat(200, len(save_agents)),
-                                    stop_ART=True,
-                                    restart_ART=True)],
+        interventions=[
+            fsw_testing,
+            other_testing,
+            low_cd4_testing,
+            # ART(ART_coverages_df=ART_coverages_df,
+            #    duration_on_ART=ss.normal(loc=18, scale=5),  # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
+            #    art_efficacy=0.96),
+            # validate_ART(disease='hiv',
+            #             uids=save_agents,
+            #             infect_uids_t=np.repeat(200, len(save_agents)),
+            #             stop_ART=True,
+            #             restart_ART=True)
+            ],
         demographics=[pregnancy, death])
 
     return sim_kwargs
@@ -453,9 +453,9 @@ if __name__ == '__main__':
     output.to_csv("HIV_output.csv")
 
     # Call method in validate_ART intervention:
-    sim.get_interventions(validate_ART)[0].save_viral_histories(sim)
-    viral_histories = pd.read_csv("viral_histories.csv", index_col=0)
-    plot_viral_dynamics(viral_histories, save_agents)
+    # sim.get_interventions(validate_ART)[0].save_viral_histories(sim)
+    # viral_histories = pd.read_csv("viral_histories.csv", index_col=0)
+    # plot_viral_dynamics(viral_histories, save_agents)
 
     plot_hiv(output)
 
