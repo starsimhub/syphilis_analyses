@@ -25,21 +25,29 @@ class HIV(ss.Infection):
 
         # Parameters
         self.default_pars(
+            # Natural history
             cd4_start=ss.normal(loc=800, scale=50),
             cd4_latent=ss.normal(loc=500, scale=50),
-            init_prev=ss.bernoulli(p=0.05),
             dur_acute=ss.lognorm_ex(3/12, 1/12),    # Duration of acute HIV infection
             dur_latent=ss.lognorm_ex(12, 3),        # Duration of latent, untreated HIV infection
             dur_falling=ss.lognorm_ex(3, 1),        # Duration of late-stage HIV when CD4 counts fall
+            p_death=None,  # Probability of death (default is to use HIV.death_prob(), otherwise can pass in a Dist or anything supported by ss.bernoulli)
 
+            # Transmission
             rel_trans_acute=ss.normal(loc=6, scale=0.5),  # Increase transmissibility during acute HIV infection
             rel_trans_falling=ss.normal(loc=8, scale=0.5),  # Increase transmissibility during late HIV infection
 
+            # Initialization
+            init_prev=ss.bernoulli(p=0.05),
             init_diagnosed=ss.bernoulli(p=0.01),
             dist_ti_init_infected=ss.uniform(low=-10 * 12, high=0),
-            p_death=None, # Probability of death (default is to use HIV.death_prob(), otherwise can pass in a Dist or anything supported by ss.bernoulli)
-            transmission_sd=0.025,
-            primary_acute_inf_dur=2.9,  # in months
+
+            # Care seeking
+            care_seeking=ss.normal(loc=1, scale=0.1),
+            maternal_care_scale=2,
+
+            # Treatment effects and data
+            cd4_growth=dict(k=0.1, cd4_max=1000, cd4_healthy=500),
             art_efficacy=0.96,
             maternal_beta_pmtct_df=None,
             pmtct_coverages_df=None,
@@ -57,6 +65,7 @@ class HIV(ss.Infection):
 
         # States
         self.add_states(
+            # Natural history
             ss.FloatArr('ti_acute'),
             ss.BoolArr('acute'),
             ss.FloatArr('ti_latent'),
@@ -65,11 +74,13 @@ class HIV(ss.Infection):
             ss.BoolArr('falling'),
             ss.FloatArr('ti_reset_cd4'),  # Time of last CD4-changing event: infection, ART initiation, or ART cessation
 
-            # Treatment states
+            # Care and treatment states
+            ss.FloatArr('care_seeking'),
             ss.BoolArr('on_art'),
             ss.FloatArr('art_transmission_reduction'),  # Reduction in transmission dependent on initial cd4 count
             ss.FloatArr('ti_art'),
             ss.FloatArr('ti_stop_art'),
+            ss.FloatArr('cd4_preart'),  # CD4 before initiating ART
             ss.FloatArr('cd4_start'),  # Initial cd4 count for each agent before an infection
             ss.FloatArr('cd4_latent'),  # CD4 count during latent infection
             ss.FloatArr('cd4'),  # Current CD4 count
@@ -99,6 +110,7 @@ class HIV(ss.Infection):
 
         # Set initial CD4
         self.init_cd4()
+        self.init_care_seeking()
 
         # Make initial cases, some of which may have occured prior to the sim start
         initial_cases = self.pars.init_prev.filter()
@@ -106,9 +118,11 @@ class HIV(ss.Infection):
         self.set_prognoses(initial_cases, ti=ti_init_cases)
         initial_cases_diagnosed = self.pars.init_diagnosed.filter(initial_cases)
         self.diagnosed[initial_cases_diagnosed] = True
+        self.ti_diagnosed[initial_cases_diagnosed] = 0
 
         return
 
+    # CD4 functions
     def acute_decline(self, uids):
         """ Acute decline in CD4 """
         acute_start = self.ti_acute[uids] - self.sim.ti
@@ -130,6 +144,25 @@ class HIV(ss.Infection):
         per_timestep_decline = (cd4_start-cd4_end)/falling_dur
         cd4 = cd4_start + per_timestep_decline*falling_start
         return cd4
+
+    def cd4_increase(self, uids):
+        # Calculate time on ART
+        ti_art = self.ti_art[uids]
+        cd4_preart = self.cd4_preart[uids]
+        dur_art = self.sim.ti - ti_art
+
+        # Extract growth parameters
+        growth_rate = self.pars.cd4_growth['k']
+        cd4_max = self.pars.cd4_growth['cd4_max']
+        cd4_healthy = self.pars.cd4_growth['cd4_healthy']
+
+        # Calculate growth - assuming that growth follows the concave part of a logistic function
+        # and that the total gain depends on the CD4 count at initiation
+        cd4_scale_factor = (cd4_max-cd4_preart)/cd4_healthy*np.log(cd4_max/cd4_preart)  # Back-engineered to fit EMOD
+        cd4_total_gain = cd4_preart*cd4_scale_factor
+        cd4_now = 2*cd4_total_gain/(1+np.exp(-dur_art*growth_rate))-cd4_total_gain+cd4_preart  # Concave logistic
+
+        return cd4_now
 
     @property
     def symptomatic(self):
@@ -155,6 +188,14 @@ class HIV(ss.Infection):
         self.cd4_start[uids] = self.pars.cd4_start.rvs(uids)
         return
 
+    def init_care_seeking(self):
+        """
+        Set care seeking behavior
+        """
+        uids = ss.uids(self.care_seeking.isnan)
+        self.care_seeking[uids] = self.pars.care_seeking.rvs(uids)
+        return
+
     def update_pre(self):
         """
         Carry out autonomous updates at the start of the timestep (prior to transmission)
@@ -164,10 +205,23 @@ class HIV(ss.Infection):
         # Update rel_trans to account for acute infection
         self.rel_trans[self.acute] *= self.pars.rel_trans_acute.rvs(self.acute.uids)
 
-        # Set initial cd4 counts for new agents:
+        # Set initial CD4 counts for new agents:
         self.init_cd4()
 
-        # Update states for people not on ART
+        # Handle care seeking behavior - initialize, then adjust depending on pregnancy
+        # This makes it much less likely that pregnant women will stop treatment
+        self.init_care_seeking()
+        pregmod = self.sim.demographics.pregnancy
+        pregnant_bools = pregmod.pregnant
+        postpreg_bools = ~pregmod.pregnant & (pregmod.ti_postpartum <= ti)
+        self.care_seeking[pregnant_bools] *= self.pars.maternal_care_scale  # Increase care-seeking for pregnant women
+        self.care_seeking[postpreg_bools] /= self.pars.maternal_care_scale  # Decrease again after postpartum
+
+        if self.on_art.any():
+            art_uids = self.on_art.uids
+            self.cd4[art_uids] = self.cd4_increase(self.on_art.uids)
+
+        # Update states for people who have never been on ART
         # Acute & not on ART
         acute = self.acute & ~self.on_art
         self.cd4[acute.uids] = self.acute_decline(acute.uids)
@@ -223,18 +277,18 @@ class HIV(ss.Infection):
         return
 
 
-    def cd4_decline(self, uids):
-        """ Dynamics of CD4 decline for PLHIV not on ART """
-        import traceback; traceback.print_exc(); import pdb; pdb.set_trace()
-
-        cd4_timecourse_data = [(0, 1), (0.5, 600 / 1000), (1, 700 / 1000), (1 * 12, 700 / 1000),
-                               (10 * 12, 0)]  # in months
-
-        # viral_load_timecourse = self._interpolate(viral_load_timecourse_data, np.arange(0, 8 * 12))
-        cd4_timecourse = self._interpolate(cd4_timecourse_data, np.arange(0, 10 * 12 + 1))
-
-        return
-
+    # def cd4_decline(self, uids):
+    #     """ Dynamics of CD4 decline for PLHIV not on ART """
+    #     import traceback; traceback.print_exc(); import pdb; pdb.set_trace()
+    #
+    #     cd4_timecourse_data = [(0, 1), (0.5, 600 / 1000), (1, 700 / 1000), (1 * 12, 700 / 1000),
+    #                            (10 * 12, 0)]  # in months
+    #
+    #     # viral_load_timecourse = self._interpolate(viral_load_timecourse_data, np.arange(0, 8 * 12))
+    #     cd4_timecourse = self._interpolate(cd4_timecourse_data, np.arange(0, 10 * 12 + 1))
+    #
+    #     return
+    #
     # def decrease_cd4(self):
     #     """ Decrease CD4 count for those not on ART """
     #     ti = self.sim.ti

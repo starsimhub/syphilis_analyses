@@ -14,7 +14,7 @@ import stisim as sti
 from stisim.networks import StructuredSexual
 from stisim.products import Dx
 from stisim.diseases.hiv import HIV
-from stisim.interventions import ART, validate_ART, BaseTest
+from stisim.interventions import ART, validate_ART, HIVTest
 from matplotlib.ticker import FuncFormatter
 import matplotlib.patches as mpatches
 from matplotlib.lines import Line2D
@@ -256,11 +256,11 @@ def plot_hiv(sim_output):
     ax[5, 1].set_ylabel('Mio.')
     ax[5, 1].legend()
 
-    #####################################################################################################################
-    # Syphilis Prevalence
-    #####################################################################################################################
-    ax[6, 0].plot(sim_output.index, 100 * sim_output['hiv.n_syphilis_inf']/sim_output['n_alive'], label='Syphilis prevalence')
-    ax[6, 0].set_title('Syphilis prevalence')
+    # #####################################################################################################################
+    # # Syphilis Prevalence
+    # #####################################################################################################################
+    # ax[6, 0].plot(sim_output.index, 100 * sim_output['hiv.n_syphilis_inf']/sim_output['n_alive'], label='Syphilis prevalence')
+    # ax[6, 0].set_title('Syphilis prevalence')
 
     fig.tight_layout()
     # plt.show()
@@ -291,59 +291,47 @@ def get_testing_products():
                                   HIV_low_cd4count_data_raw.iloc[0].values[~pd.isna(HIV_low_cd4count_data_raw.iloc[0].values)])
 
     ####################################################################################################################
-    # Product
-    ####################################################################################################################
-
-    testing_data = pd.read_csv(StringIO("""name,state,disease,result,probability
-                    simple testing,susceptible,hiv,positive,0
-                    simple testing,susceptible,hiv,negative,1
-                    simple testing,infected,hiv,positive,1
-                    simple testing,infected,hiv,negative,0
-                    """), sep=",")
-    simple_test = Dx(df=testing_data, name='simple_test')
-
-    ####################################################################################################################
     # FSW Testing
     ####################################################################################################################
-    # Eligible for testing are FSW agents, who haven't been diagnosed yet and haven't been screened yet or last screening was 12months ago.
 
-    FSW_eligible = lambda sim: sim.networks.structuredsexual.fsw & ~sim.diseases['hiv'].diagnosed & \
-                               (np.isnan(sim.get_intervention('fsw_testing').ti_screened) | (sim.ti > (sim.get_intervention('fsw_testing').ti_screened + 12)))
-    FSW_testing = BaseTest(prob=FSW_prop / 12,
-                           name='fsw_testing',
-                           product=simple_test,
-                           eligibility=FSW_eligible,
-                           label='fsw_testing',
-                           disease='hiv')
+    # Eligible for testing are FSW agents who haven't been diagnosed or treated yet
+    fsw_eligible = lambda sim: sim.networks.structuredsexual.fsw & ~sim.diseases.hiv.diagnosed & ~sim.diseases.hiv.on_art
+    fsw_testing = HIVTest(
+        years=tivec,
+        test_prob_data=FSW_prop,
+        name='fsw_testing',
+        eligibility=fsw_eligible,
+        label='fsw_testing',
+       )
 
     ####################################################################################################################
     # Remaining population testing
     ####################################################################################################################
 
-    # Eligible for testing are non-FSW agents, who haven't been diagnosed yet and haven't been screened yet or last screening was 12months ago.
-    other_eligible = lambda sim: ~sim.networks.structuredsexual.fsw & ~sim.diseases['hiv'].diagnosed & \
-                                 (np.isnan(sim.get_intervention('other_testing').ti_screened) | (sim.ti > (sim.get_intervention('other_testing').ti_screened + 12)))
-    other_testing = BaseTest(prob=other_prop / 12,
-                             name='other_testing',
-                             product=simple_test,
-                             eligibility=other_eligible,
-                             label='other_testing',
-                             disease='hiv')
+    # Eligible for testing are non-FSW agents who haven't been diagnosed or treated yet
+    other_eligible = lambda sim: ~sim.networks.structuredsexual.fsw & ~sim.diseases.hiv.diagnosed & ~sim.diseases.hiv.on_art
+    other_testing = HIVTest(
+        years=tivec,
+        test_prob_data=other_prop,
+        name='other_testing',
+        eligibility=other_eligible,
+        label='other_testing',
+    )
 
     ####################################################################################################################
-    # CD4 count < 50 testing
+    # Low CD4 count testing
     ####################################################################################################################
-    # Eligible for testing are agents, who haven't been diagnosed yet and whose CD4 count is below 50.
+    # Eligible for testing are agents, who haven't been diagnosed yet and whose CD4 count is below 200.
+    low_cd4_eligible = lambda sim: (sim.diseases.hiv.cd4 < 200) & ~sim.diseases.hiv.diagnosed
+    low_cd4_testing = HIVTest(
+        years=tivec,
+        test_prob_data=low_cd4count_prop,
+        name='low_cd4_testing',
+        eligibility=low_cd4_eligible,
+        label='low_cd4_testing',
+    )
 
-    low_cd4_eligibe = lambda sim: (sim.diseases['hiv'].cd4 < 200) & ~sim.diseases['hiv'].diagnosed
-    low_cd4_testing = BaseTest(prob=low_cd4count_prop / 12,
-                               name='low_cd4_testing',
-                               product=simple_test,
-                               eligibility=low_cd4_eligibe,
-                               label='low_cd4_testing',
-                               disease='hiv')
-
-    return FSW_testing, other_testing, low_cd4_testing
+    return fsw_testing, other_testing, low_cd4_testing
 
 
 def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, latent_trans=0.075,
@@ -362,7 +350,7 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
         # primary_acute_inf_dur=2.9,  # in months
         # transmission_sd=0.0,  # Standard Deviation of normal distribution for randomness in transmission.
     )
-    tivec = np.arange(start=1990, stop=2021 + 1 / 12, step=1 / 12)
+    # tivec = np.arange(start=1990, stop=2021 + 1 / 12, step=1 / 12)
 
     ####################################################################################################################
     # Treatment Data
@@ -374,7 +362,7 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
                                                          ART_coverages_raw.index.astype(int).tolist(),
                                                          (ART_coverages_raw.values / 100).tolist()))})
 
-    # import traceback; traceback.print_exc(); import pdb; pdb.set_trace()
+    ART_coverages_df.Value.iloc[0]=0.5
     hiv.pars['ART_coverages_df'] = ART_coverages_df
 
     ####################################################################################################################
@@ -414,9 +402,9 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, laten
             fsw_testing,
             other_testing,
             low_cd4_testing,
-            # ART(ART_coverages_df=ART_coverages_df,
-            #    duration_on_ART=ss.normal(loc=18, scale=5),  # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
-            #    art_efficacy=0.96),
+            ART(ART_coverages_df=ART_coverages_df,
+               duration_on_ART=ss.normal(loc=18, scale=5),  # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
+               art_efficacy=0.96),
             # validate_ART(disease='hiv',
             #             uids=save_agents,
             #             infect_uids_t=np.repeat(200, len(save_agents)),
