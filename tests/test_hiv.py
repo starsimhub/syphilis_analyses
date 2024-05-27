@@ -201,7 +201,7 @@ def test_hiv_syph():
     pars['start'] = 2020
     pars['end'] = 2040
     pars['dt'] = 1 / 12
-    hiv = sti.HIV(init_prev=0, p_hiv_death=0, beta={'structuredsexual': [0, 0], 'maternal': [0, 0]})
+    hiv = sti.HIV(init_prev=0, p_hiv_death=0, include_aids_deaths=False, beta={'structuredsexual': [0, 0], 'maternal': [0, 0]})
     syphilis = sti.SyphilisPlaceholder(prevalence=None)
 
     pars['diseases'] = [hiv, syphilis]
@@ -212,7 +212,6 @@ def test_hiv_syph():
     pars['analyzers'] = output
     pars['connectors'] = sti.hiv_syph(hiv, syphilis, rel_sus_hiv_syph=100, rel_trans_hiv_syph=100)
 
-
     sim = ss.Sim(pars, copy_inputs=False).run()
 
     fig = output.plot(agents)
@@ -221,5 +220,4 @@ def test_hiv_syph():
 
 if __name__ == '__main__':
     s0 = test_hiv()
-    plt.show()
-    # test_hiv_syph()
+    s1 = test_hiv_syph()
