@@ -119,7 +119,6 @@ class ART(ss.Intervention):
             dur_on_art=ss.normal(loc=18, scale=5),
             dur_post_art=ss.normal(loc=self.dur_post_art_mean, scale=self.dur_post_art_scale),
             dur_post_art_scale_factor=0.1,
-            art_efficacy=0.96,
             art_cd4_pars=dict(cd4_max=1000, cd4_healthy=500),
             init_prob=ss.bernoulli(p=0.9),  # Probability that a newly diagnosed person will initiate treatment
             )
@@ -206,14 +205,16 @@ class ART(ss.Intervention):
         newly_treated = uids[hiv.never_art[uids]]
         hiv.never_art[newly_treated] = False
         hiv.ti_art[uids] = ti
-        hiv.ti_reset_cd4[uids] = ti
         hiv.cd4_preart[uids] = hiv.cd4[uids]
 
         # Determine when agents goes off ART
         dur_on_art = self.pars.dur_on_art.rvs(uids)
         hiv.ti_stop_art[uids] = ti + (dur_on_art / dt).astype(int)
 
-        # ART nullifies all future dates in the natural history
+        # ART nullifies all states and all future dates in the natural history
+        hiv.acute = False
+        hiv.latent = False
+        hiv.falling = False
         future_latent = uids[hiv.ti_latent[uids] > sim.ti]
         hiv.ti_latent[future_latent] = np.nan
         future_falling = uids[hiv.ti_falling[uids] > sim.ti]
@@ -247,12 +248,11 @@ class ART(ss.Intervention):
         # Remove agents from ART
         if uids is None: uids = hiv.on_art & (hiv.ti_stop_art <= ti)
         hiv.on_art[uids] = False
-        hiv.ti_reset_cd4[uids] = ti
         hiv.cd4_postart[uids] = sc.dcp(hiv.cd4[uids])
 
         # Set decline
         dur_post_art = self.pars.dur_post_art.rvs(uids)
-        hiv.ti_dead[uids] = ti + (dur_post_art / dt).astype(int)
+        hiv.ti_zero[uids] = ti + (dur_post_art / dt).astype(int)
 
         return
 
