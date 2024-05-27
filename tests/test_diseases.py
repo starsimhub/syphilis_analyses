@@ -68,7 +68,7 @@ def test_hiv_epi():
 
     # Define the parameters to vary
     par_effects = dict(
-        primary_acute_inf_dur=[2.9, 6.1],
+        dur_acute=[3/12, 12/12],
         init_prev=[0.01, 0.1],
         beta=[0.01, 0.95]  # Beta for male to female transmission; opposite direction uses half this value
     )
