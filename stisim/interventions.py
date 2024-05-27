@@ -116,8 +116,11 @@ class ART(ss.Intervention):
         self.default_pars(
             ART_coverages_df=None,
             ARV_coverages_df=None,
-            duration_on_ART=ss.normal(loc=18, scale=5),
+            dur_on_art=ss.normal(loc=18, scale=5),
+            dur_post_art=ss.normal(loc=self.dur_post_art_mean, scale=self.dur_post_art_scale),
+            dur_post_art_scale_factor=0.1,
             art_efficacy=0.96,
+            art_cd4_pars=dict(cd4_max=1000, cd4_healthy=500),
             init_prob=ss.bernoulli(p=0.9),  # Probability that a newly diagnosed person will initiate treatment
             )
         self.update_pars(pars, **kwargs)
@@ -127,6 +130,23 @@ class ART(ss.Intervention):
         super().initialize(sim)
         self.initialized = True
         return
+
+    @staticmethod
+    def dur_post_art_fn(module, sim, uids):
+        hiv = sim.diseases.hiv
+        dur_mean = np.log(hiv.cd4_preart[uids])*hiv.cd4[uids]/hiv.cd4_potential[uids]
+        dur_scale = dur_mean * module.pars.dur_post_art_scale_factor
+        return dur_mean, dur_scale
+
+    @staticmethod
+    def dur_post_art_mean(module, sim, uids):
+        mean, _ = module.dur_post_art_fn(module, sim, uids)
+        return mean
+
+    @staticmethod
+    def dur_post_art_scale(module, sim, uids):
+        _, scale = module.dur_post_art_fn(module, sim, uids)
+        return scale
 
     def apply(self, sim):
         """
@@ -142,24 +162,31 @@ class ART(ss.Intervention):
 
         # Firstly, check who is stopping ART
         if hiv.on_art.any():
-            self.stop_art(sim)
+            stopping = hiv.on_art & (hiv.ti_stop_art <= sim.ti)
+            if stopping.any():
+                self.stop_art(stopping.uids)
 
         # Next, see how many people we need to treat vs how many are already being treated
         ART_coverage = ART_coverage_this_year
-        dx_uids = hiv.diagnosed.uids
-        n_to_treat = int(ART_coverage*len(dx_uids))
+        inf_uids = hiv.infected.uids
+        # dx_uids = hiv.diagnosed.uids
+        n_to_treat = int(ART_coverage*len(inf_uids))
+        on_art = hiv.on_art
 
-        # Initiate a proportion of newly diagnosed agents onto ART
+        # A proportion of newly diagnosed agents onto ART will be willing to initiate ART
         diagnosed = hiv.ti_diagnosed == sim.ti
         if len(diagnosed.uids):
             dx_to_treat = self.pars.init_prob.filter(diagnosed.uids)
-            self.start_art(sim, dx_to_treat)
+
+            # Figure out if there are treatment spots available and if so, prioritize newly diagnosed agents
+            n_available_spots = n_to_treat - len(on_art.uids)
+            if n_available_spots > 0:
+                self.prioritize_art(sim, n=n_available_spots, awaiting_art_uids=dx_to_treat)
 
         # Apply correction to match ART coverage data:
-        self.art_coverage_correction(sim, n_to_treat)
+        self.art_coverage_correction(sim, target_coverage=n_to_treat)
 
-        # Adjust rel_trans for all treated agents, and also rel_sus for protected unborn agents
-        hiv.rel_trans[hiv.on_art] = 1 - self.pars.art_efficacy
+        # Adjust rel_sus for protected unborn agents
         if hiv.on_art[sim.people.pregnancy.pregnant].any():
             mother_uids = (hiv.on_art & sim.people.pregnancy.pregnant).uids
             infants = sim.networks.maternalnet.find_contacts(mother_uids)
@@ -171,78 +198,117 @@ class ART(ss.Intervention):
         """
         Check who is ready to start ART treatment and put them on ART
         """
+        ti = sim.ti
+        dt = sim.dt
+
         hiv = sim.diseases.hiv
         hiv.on_art[uids] = True
-        hiv.ti_art[uids] = sim.ti
-        hiv.ti_reset_cd4[uids] = sim.ti
+        newly_treated = uids[hiv.never_art[uids]]
+        hiv.never_art[newly_treated] = False
+        hiv.ti_art[uids] = ti
+        hiv.ti_reset_cd4[uids] = ti
         hiv.cd4_preart[uids] = hiv.cd4[uids]
 
-        # Determine when agents goes off ART:
-        hiv.ti_stop_art[uids] = sim.ti + self.pars.duration_on_ART.rvs(uids).astype(int)
+        # Determine when agents goes off ART
+        dur_on_art = self.pars.dur_on_art.rvs(uids)
+        hiv.ti_stop_art[uids] = ti + (dur_on_art / dt).astype(int)
+
+        # ART nullifies all future dates in the natural history
+        future_latent = uids[hiv.ti_latent[uids] > sim.ti]
+        hiv.ti_latent[future_latent] = np.nan
+        future_falling = uids[hiv.ti_falling[uids] > sim.ti]
+        hiv.ti_falling[future_falling] = np.nan
+        future_dead = uids[hiv.ti_dead[uids] > sim.ti]  # NB, if they are scheduled to die on this time step, they will
+        hiv.ti_dead[future_dead] = np.nan
+
+        # Set CD4 potential for anyone new to treatment - retreated people have the same potential
+        # Extract growth parameters
+        if len(newly_treated) > 0:
+            cd4_max = self.pars.art_cd4_pars['cd4_max']
+            cd4_healthy = self.pars.art_cd4_pars['cd4_healthy']
+            cd4_preart = hiv.cd4_preart[newly_treated]
+
+            # Calculate potential CD4 increase - assuming that growth follows the concave part of a logistic function
+            # and that the total gain depends on the CD4 count at initiation
+            cd4_scale_factor = (cd4_max-cd4_preart)/cd4_healthy*np.log(cd4_max/cd4_preart)
+            cd4_total_gain = cd4_preart*cd4_scale_factor
+            hiv.cd4_potential[newly_treated] = hiv.cd4_preart[newly_treated] + cd4_total_gain
 
         return
 
-    @staticmethod
-    def stop_art(sim):
+    def stop_art(self, uids=None):
         """
         Check who is stopping ART treatment and put them off ART
         """
-        hiv = sim.diseases.hiv
-        ti = sim.ti
+        hiv = self.sim.diseases.hiv
+        ti = self.sim.ti
+        dt = self.sim.dt
 
-        # Non-pregnant agents
-        stop_uids = hiv.on_art & (hiv.ti_stop_art <= ti)
-        hiv.on_art[stop_uids] = False
-        hiv.ti_reset_cd4[stop_uids] = ti
+        # Remove agents from ART
+        if uids is None: uids = hiv.on_art & (hiv.ti_stop_art <= ti)
+        hiv.on_art[uids] = False
+        hiv.ti_reset_cd4[uids] = ti
+        hiv.cd4_postart[uids] = sc.dcp(hiv.cd4[uids])
+
+        # Set decline
+        dur_post_art = self.pars.dur_post_art.rvs(uids)
+        hiv.ti_dead[uids] = ti + (dur_post_art / dt).astype(int)
 
         return
 
-    def art_coverage_correction(self, sim, n_to_treat):
+    def prioritize_art(self, sim, n=None, awaiting_art_uids=None):
         """
-        Adjust number of people on treatment to match data
+        Prioritize ART to n agents among those awaiting treatment
         """
         hiv = sim.diseases.hiv
-        diag_treated = hiv.diagnosed & hiv.on_art
-        diag_untreated = hiv.diagnosed & ~hiv.on_art
+        if awaiting_art_uids is None:
+            awaiting_art_uids = (hiv.diagnosed & ~hiv.on_art).uids
+
+        # Enough spots for everyone
+        if n > len(awaiting_art_uids):
+            start_uids = awaiting_art_uids
+
+        # Not enough spots - construct weights based on CD4 count and care seeking
+        else:
+            cd4_counts = hiv.cd4[awaiting_art_uids]
+            care_seeking = hiv.care_seeking[awaiting_art_uids]
+            weights = cd4_counts*(1/care_seeking)
+            choices = np.argsort(weights)[:n]
+            start_uids = awaiting_art_uids[choices]
+
+        self.start_art(sim, start_uids)
+
+        return
+
+    def art_coverage_correction(self, sim, target_coverage=None):
+        """
+        Adjust ART coverage to match data
+        """
+        hiv = sim.diseases.hiv
+        on_art = hiv.on_art
 
         # Too many agents on treatment -> remove
-        if len(diag_treated.uids) > n_to_treat:
+        if len(on_art.uids) > target_coverage:
 
             # Agents with the highest CD4 counts will go off ART:
-            n_to_stop = int(len(diag_treated.uids) - n_to_treat)
-            on_art = diag_treated.uids
+            n_to_stop = int(len(on_art.uids) - target_coverage)
+            on_art_uids = on_art.uids
 
             # Construct weights and choice distribution
-            cd4_counts = hiv.cd4[on_art]
-            care_seeking = hiv.care_seeking[on_art]
-            weights = cd4_counts*care_seeking
+            cd4_counts = hiv.cd4[on_art_uids]
+            care_seeking = hiv.care_seeking[on_art_uids]
+            weights = cd4_counts/care_seeking
             choices = np.argsort(-weights)[:n_to_stop]
-            stop_uids = on_art[choices]
+            stop_uids = on_art_uids[choices]
 
-            hiv.on_art[stop_uids] = False
             hiv.ti_stop_art[stop_uids] = sim.ti
+            self.stop_art(stop_uids)
 
         # Not enough agents on treatment -> add
-        elif len(diag_treated.uids) < n_to_treat:
-
-            # Calculate how many agents need to start ART and how many are available
-            n_to_start = int(n_to_treat - len(diag_treated.uids))
-            available = diag_untreated.uids
-            n_available = len(available)
-
-            if n_available > n_to_start:
-                # Construct weights based on CD4 count and care seeking
-                cd4_counts = hiv.cd4[available]
-                care_seeking = hiv.care_seeking[available]
-                weights = cd4_counts*(1/care_seeking)
-                choices = np.argsort(weights)[:n_to_start]
-                start_uids = available[choices]
-            else:
-                start_uids = available
-
-            self.start_art(sim, start_uids)
-
-        return
+        elif len(on_art.uids) < target_coverage:
+            n_to_add = target_coverage - len(on_art.uids)
+            awaiting_art_uids = (hiv.diagnosed & ~hiv.on_art).uids
+            self.prioritize_art(sim, n=n_to_add, awaiting_art_uids=awaiting_art_uids)
 
 
 # %% Validation and other checks -- TODO, should this be an analyzer?
