@@ -75,49 +75,6 @@ def make_testing_intvs():
         label='symp_test',
     )
 
-    class SympTest(ss.Intervention):
-        def __init__(self, interventions, products, test_prob_data=None):
-
-            self.interventions = interventions
-            self.products = products
-            self.market_share = ...  # Represent the product mix, could vary over time, read in csv
-            self.screening_products = 'some representaiton of products and coverages'
-
-            # Set test_probs -- option 1
-            self.screen_prob = ss.bernoulli(p=self.handle_test_prob_data)
-            self.market_share = ss.choice(a=len(products), p=self.figure_out_market_share)
-
-            return
-
-        def apply(self, sim):
-
-            # coverage = self.coverage[:,ti]   # a vector with the current test coverages by population
-            # market_share = coverage/sum(coverage)
-
-            # Option 1
-            screen_uids = self.screen_prob.filter(...)
-            self.market_share.set(p=[])
-            which_prod = self.market_share.rvs(screen_uids)  # gives people a product
-            # then implement each product
-            for i, product in enumerate(self.products):
-                product.administer(screen_uids[which_prod==i])
-
-            # Option 2
-            # The screen_probs is product-specific, ie. row for each risk group, sex, sex worker, product, time
-
-            # Assign market share here
-            screen_pos = self.screening_products['syndromic'].test(screen_uids)
-
-
-            ...
-            direct_treatment = self.direct_treat.filter(screen_pos)
-            # give penicillin
-
-            # do confirmatory test
-
-
-
-
     # Funnel all symptomatic people into different management options
     # This is a way of representing the market share or product mix.
     synd_el = lambda sim: sim.get_intervention('symp_test').outcomes['syndromic']
