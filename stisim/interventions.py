@@ -9,194 +9,98 @@ from collections import defaultdict
 import sciris as sc
 
 
-__all__ = []
+__all__ = ['HIVTest', 'ART']
 
 
-# %% Helper functions
-
-def find_timepoint(arr, t=None, interv=None, sim=None, which='first'):
-    '''
-    Helper function to find if the current simulation time matches any timepoint in the
-    intervention. Although usually never more than one index is returned, it is
-    returned as a list for the sake of easy iteration.
+class HIVTest(ss.Intervention):
+    """
+    Base class for HIV testing
 
     Args:
-        arr (list/function): list of timepoints in the intervention, or a boolean array; or a function that returns these
-        t (int): current simulation time (can be None if a boolean array is used)
-        interv (intervention): the intervention object (usually self); only used if arr is callable
-        sim (sim): the simulation object; only used if arr is callable
-        which (str): what to return: 'first', 'last', or 'all' indices
-
-    Returns:
-        inds (list): list of matching timepoints; length zero or one unless which is 'all'
-    '''
-    if callable(arr):
-        arr = arr(interv, sim)
-        arr = sc.promotetoarray(arr)
-    all_inds = sc.findinds(arr=arr, val=t)
-    if len(all_inds) == 0 or which == 'all':
-        inds = all_inds
-    elif which == 'first':
-        inds = [all_inds[0]]
-    elif which == 'last':
-        inds = [all_inds[-1]]
-    else:  # pragma: no cover
-        errormsg = f'Argument "which" must be "first", "last", or "all", not "{which}"'
-        raise ValueError(errormsg)
-    return inds
-
-
-def select_people(inds, prob=None):
-    '''
-    Return an array of indices of people to who accept a service being offered
-
-    Args:
-        inds: array of indices of people offered a service (e.g. screening, triage, treatment)
-        prob: acceptance probability
-
-    Returns: Array of indices of people who accept
-    '''
-    accept_probs = np.full_like(inds, fill_value=prob, dtype=np.float64)
-    accept_inds = np.random.random(accept_probs.shape) < prob
-    return inds[accept_inds]
-
-
-def get_subtargets(subtarget, sim):
-    '''
-    A small helper function to see if subtargeting is a list of indices to use,
-    or a function that needs to be called. If a function, it must take a single
-    argument, a sim object, and return a list of indices. Also validates the values.
-    Currently designed for use with testing interventions, but could be generalized
-    to other interventions. Not typically called directly by the user.
-
-    Args:
-        subtarget (dict): dict with keys 'inds' and 'vals'; see test_num() for examples of a valid subtarget dictionary
-        sim (Sim): the simulation object
-    '''
-
-    # Validation
-    if callable(subtarget):
-        subtarget = subtarget(sim)
-
-    if 'inds' not in subtarget:  # pragma: no cover
-        errormsg = f'The subtarget dict must have keys "inds" and "vals", but you supplied {subtarget}'
-        raise ValueError(errormsg)
-
-    # Handle the two options of type
-    if callable(subtarget['inds']):  # A function has been provided
-        subtarget_inds = subtarget['inds'](sim)  # Call the function to get the indices
-    else:
-        subtarget_inds = subtarget['inds']  # The indices are supplied directly
-
-    # Validate the values
-    if callable(subtarget['vals']):  # A function has been provided
-        subtarget_vals = subtarget['vals'](sim)  # Call the function to get the indices
-    else:
-        subtarget_vals = subtarget['vals']  # The indices are supplied directly
-    if sc.isiterable(subtarget_vals):
-        if len(subtarget_vals) != len(subtarget_inds):  # pragma: no cover
-            errormsg = f'Length of subtargeting indices ({len(subtarget_inds)}) does not match length of values ({len(subtarget_vals)})'
-            raise ValueError(errormsg)
-
-    return subtarget_inds, subtarget_vals
-
-
-# %% Custom interventions
-
-__all__ += ['BaseTest', 'ART']
-
-
-class BaseTest(ss.Intervention):
-    '''
-    Base class for screening and triage.
-
-    Args:
-         product        (str/Product)   : the diagnostic to use
-         prob           (float/arr)     : annual probability of eligible people receiving the diagnostic
+         prob           (float/arr)     : annual probability of eligible people being tested
          eligibility    (inds/callable) : indices OR callable that returns inds
          label          (str)           : the name of screening strategy
          kwargs         (dict)          : passed to Intervention()
-    '''
+    """
 
-    def __init__(self, product=None, prob=None, eligibility=None, disease=None, **kwargs):
-        super().__init__(self, **kwargs)
+    def __init__(self, pars=None, test_prob_data=None, years=None, eligibility=None, name=None, label=None, **kwargs):
+        super().__init__(name=name, label=label)
+        self.default_pars(
+            rel_test=1,
+        )
+        self.update_pars(pars, **kwargs)
 
-        self.prob = sc.promotetoarray(prob)
+        # Set testing probabilities and years
+        self.years = years
+        self.test_prob_data = test_prob_data
+        self.test_prob = ss.bernoulli(self.make_test_prob_fn)
+
+        # Set eligibility and timepoints
         self.eligibility = eligibility
-        self.disease = disease
-        self._parse_product(product)
-        self.screened = ss.BoolArr('screened', default=False)
-        self.ti_screened = ss.FloatArr('ti_screened')
-        self.outcomes = None
         self.timepoints = []  # The start and end timepoints of the intervention
 
-    def _parse_product(self, product):
-        '''
-        Parse the product input
-        '''
-        if isinstance(product, ss.Product):  # No need to do anything
-            self.product = product
-        elif isinstance(product, str):  # Try to find it in the list of defaults
-            try:
-                self.product = ss.default_dx(prod_name=product)
-            except:
-                errormsg = f'Could not find product {product} in the standard list.'
-                raise ValueError(errormsg)
-        else:
-            errormsg = f'Cannot understand format of product {product} - please provide it as either a Product or string matching a default product.'
-            raise ValueError(errormsg)
-        return
+        # States
+        self.tested = ss.BoolArr('tested', default=False)
+        self.ti_tested = ss.FloatArr('ti_tested')
+        self.diagnosed = ss.BoolArr('diagnosed', default=False)
+        self.ti_diagnosed = ss.FloatArr('ti_diagnosed')
 
     def initialize(self, sim):
         super().initialize(sim)
         self.init_results()
-        self.npts = self.sim.npts
-        # self.n_products_used = ss.Result(name=f'Products administered by {self.label}', npts=sim.npts, scale=True)
-        self.outcomes = {k: np.array([], dtype=np.int64) for k in self.product.hierarchy}
         return
 
     def init_results(self):
         npts = self.sim.npts
         self.results += [
-            ss.Result(self.name, 'new_screened', npts, dtype=float, scale=True),
-            ss.Result(self.name, 'new_screens', npts, dtype=int, scale=True)]
-
+            ss.Result(self.name, 'new_diagnoses', npts, dtype=float, scale=True),
+            ss.Result(self.name, 'new_tests', npts, dtype=int, scale=True)]
         return
 
+    @staticmethod
+    def make_test_prob_fn(self, sim, uids):
+        """ Testing probabilites over time """
+
+        if sc.isnumber(self.test_prob_data):
+            test_prob = self.test_prob_data
+
+        elif sc.checktype(self.test_prob_data, 'arraylike'):
+            year_ind = sc.findnearest(self.years, sim.year)
+            test_prob = self.test_prob_data[year_ind]
+            test_prob = test_prob * self.pars.rel_test * sim.dt
+            test_prob = np.clip(test_prob, a_min=0, a_max=1)
+        else:
+            errormsg = 'Format of test_prob_data must be float or array.'
+            raise ValueError(errormsg)
+
+        # Scale and validate
+        test_prob = test_prob * self.pars.rel_test * sim.dt
+        test_prob = np.clip(test_prob, a_min=0, a_max=1)
+
+        return test_prob
+
     def apply(self, sim):
-        self.outcomes = {k: np.array([], dtype=np.int64) for k in self.product.hierarchy}
-        accept_inds = self.deliver(sim)
+        hiv = sim.diseases.hiv
 
-        # Store results
-        idx = sim.ti
-        new_screen_inds = accept_inds[self.screened[accept_inds]]  # Figure out people who are getting screened for the first time
-        n_new_people = sim.people.scale_flows(new_screen_inds)  # Scale
-        n_new_screens = sim.people.scale_flows(accept_inds)  # Scale
-        self.results['new_screened'][idx] += n_new_people
-        self.results['new_screens'][idx] += n_new_screens
+        # Find who's eligible to test, who gets a test, and who is diagnosed
+        eligible_uids = self.check_eligibility(sim)  # Apply eligiblity
+        if len(eligible_uids):
+            tester_uids = self.test_prob.filter(eligible_uids)
+            if len(tester_uids):
+                # Add results and states for testers
+                self.results['new_tests'][sim.ti] += len(tester_uids)
+                self.tested[tester_uids] = True
+                self.ti_tested[tester_uids] = sim.ti
 
-        # Update states
-        self.screened[accept_inds] = True
-        sim.diseases[self.disease].diagnosed[self.outcomes['positive']] = True
-        self.ti_screened[accept_inds] = sim.ti
-        sim.diseases[self.disease].ti_diagnosed[self.outcomes['positive']] = sim.ti
+                # Add results and states for diagnoses
+                pos_uids = tester_uids[hiv.infected[tester_uids]]
+                self.results['new_diagnoses'][sim.ti] += len(pos_uids)
+                self.diagnosed[pos_uids] = True
+                self.ti_diagnosed[pos_uids] = sim.ti
+                hiv.diagnosed[pos_uids] = True
+                hiv.ti_diagnosed[pos_uids] = sim.ti
 
-        return accept_inds
-
-    def deliver(self, sim):
-        '''
-        Deliver the diagnostics by finding who's eligible, finding who accepts, and applying the product.
-        '''
-        ti = np.minimum(len(self.prob) - 1, sc.findinds(np.unique(np.floor(sim.yearvec)), np.floor(sim.year))[0])
-        prob = self.prob[ti]  # Get the proportion of people who will be tested this timestep
-
-        eligible_inds = self.check_eligibility(sim)  # Check eligibility
-        accept_inds = select_people(eligible_inds, prob=prob)  # Find people who accept
-        if len(accept_inds):
-            idx = sim.ti  # int(sim.ti / sim.resfreq)
-            # self.n_products_used[idx] += sim.people.scale_flows(accept_inds)
-            self.outcomes = self.product.administer(sim, accept_inds)  # Actually administer the diagnostic, filtering people into outcome categories
-        return accept_inds
+        return
 
     def check_eligibility(self, sim):
         return self.eligibility(sim).uids
@@ -208,18 +112,17 @@ class ART(ss.Intervention):
     """
 
     def __init__(self, pars=None, **kwargs):
-
         super().__init__()
         self.default_pars(
             ART_coverages_df=None,
             ARV_coverages_df=None,
-            duration_on_ART=ss.normal(loc=18, scale=5),
-            art_efficacy=0.96
+            dur_on_art=ss.normal(loc=18, scale=5),
+            dur_post_art=ss.normal(loc=self.dur_post_art_mean, scale=self.dur_post_art_scale),
+            dur_post_art_scale_factor=0.1,
+            art_cd4_pars=dict(cd4_max=1000, cd4_healthy=500),
+            init_prob=ss.bernoulli(p=0.9),  # Probability that a newly diagnosed person will initiate treatment
             )
         self.update_pars(pars, **kwargs)
-
-        self._pending_ART = defaultdict(list)
-        self.disease = 'hiv'
         return
 
     def initialize(self, sim):
@@ -228,24 +131,27 @@ class ART(ss.Intervention):
         return
 
     @staticmethod
-    def check_uids(current, date, t, filter_uids=None):
-        """
-        Return indices for which the current state is false and which meet the date criterion
-        """
-        if filter_uids is None:
-            not_current = current.auids.remove(current.uids)
-        else:
-            not_current = filter_uids[np.logical_not(current[filter_uids])]
-        has_date = not_current[~np.isnan(date[not_current])]
-        uids = has_date[t >= date[has_date]]
-        return uids
+    def dur_post_art_fn(module, sim, uids):
+        hiv = sim.diseases.hiv
+        dur_mean = np.log(hiv.cd4_preart[uids])*hiv.cd4[uids]/hiv.cd4_potential[uids]
+        dur_scale = dur_mean * module.pars.dur_post_art_scale_factor
+        return dur_mean, dur_scale
+
+    @staticmethod
+    def dur_post_art_mean(module, sim, uids):
+        mean, _ = module.dur_post_art_fn(module, sim, uids)
+        return mean
+
+    @staticmethod
+    def dur_post_art_scale(module, sim, uids):
+        _, scale = module.dur_post_art_fn(module, sim, uids)
+        return scale
 
     def apply(self, sim):
         """
         Apply the ART intervention at each time step. Put agents on and off ART and adjust based on data.
         """
-
-        diagnosed = ((sim.diseases[self.disease].ti_diagnosed == sim.ti) & (~sim.people.pregnancy.pregnant.values)).uids  # Uids of non-pregnant agents diagnosed in this time step
+        hiv = sim.diseases.hiv
 
         # Get the current ART coverage. If year is not available, assume 90%
         if len(self.pars.ART_coverages_df[self.pars.ART_coverages_df['Years'] == sim.year]['Value'].tolist()) > 0:
@@ -253,128 +159,156 @@ class ART(ss.Intervention):
         else:
             ART_coverage_this_year = self.pars.ART_coverages_df.Value.iloc[-1]  # Assume last coverage
 
-        ART_coverage = ART_coverage_this_year
-        # Schedule ART for a proportion of the newly diagnosed agents:
-        diagnosed_to_start_ART = diagnosed[np.random.random(len(diagnosed)) < ART_coverage]
+        # Firstly, check who is stopping ART
+        if hiv.on_art.any():
+            stopping = hiv.on_art & (hiv.ti_stop_art <= sim.ti)
+            if stopping.any():
+                self.stop_art(stopping.uids)
 
-        # Check who is starting ART
-        self.start_ART_treatment(sim, diagnosed_to_start_ART)
-        # Check who is stopping ART
-        self.check_stop_ART_treatment(sim)
+        # Next, see how many people we need to treat vs how many are already being treated
+        ART_coverage = ART_coverage_this_year
+        inf_uids = hiv.infected.uids
+        # dx_uids = hiv.diagnosed.uids
+        n_to_treat = int(ART_coverage*len(inf_uids))
+        on_art = hiv.on_art
+
+        # A proportion of newly diagnosed agents onto ART will be willing to initiate ART
+        diagnosed = hiv.ti_diagnosed == sim.ti
+        if len(diagnosed.uids):
+            dx_to_treat = self.pars.init_prob.filter(diagnosed.uids)
+
+            # Figure out if there are treatment spots available and if so, prioritize newly diagnosed agents
+            n_available_spots = n_to_treat - len(on_art.uids)
+            if n_available_spots > 0:
+                self.prioritize_art(sim, n=n_available_spots, awaiting_art_uids=dx_to_treat)
+
         # Apply correction to match ART coverage data:
-        self.ART_coverage_correction(sim, ART_coverage * len((sim.diseases[self.disease].diagnosed & (~sim.people.pregnancy.pregnant.values)).uids))
-        # Update ART for pregnant women
-        self.update_ART_pregnancies(sim)
+        self.art_coverage_correction(sim, target_coverage=n_to_treat)
+
+        # Adjust rel_sus for protected unborn agents
+        if hiv.on_art[sim.people.pregnancy.pregnant].any():
+            mother_uids = (hiv.on_art & sim.people.pregnancy.pregnant).uids
+            infants = sim.networks.maternalnet.find_contacts(mother_uids)
+            hiv.rel_sus[ss.uids(infants)] = 0
 
         return
 
-    def start_ART_treatment(self, sim, uids):
+    def start_art(self, sim, uids):
         """
         Check who is ready to start ART treatment and put them on ART
         """
-        for uid in uids:
-            if uid in sim.people.alive.uids:
-                sim.diseases[self.disease].on_art[ss.uids(uid)] = True
-                sim.diseases[self.disease].ti_art[ss.uids(uid)] = sim.ti
-                # Determine when agents goes off ART:
-                sim.diseases[self.disease].ti_stop_art[ss.uids(uid)] = sim.ti + int(self.pars.duration_on_ART.rvs(1))
+        ti = sim.ti
+        dt = sim.dt
+
+        hiv = sim.diseases.hiv
+        hiv.on_art[uids] = True
+        newly_treated = uids[hiv.never_art[uids]]
+        hiv.never_art[newly_treated] = False
+        hiv.ti_art[uids] = ti
+        hiv.cd4_preart[uids] = hiv.cd4[uids]
+
+        # Determine when agents goes off ART
+        dur_on_art = self.pars.dur_on_art.rvs(uids)
+        hiv.ti_stop_art[uids] = ti + (dur_on_art / dt).astype(int)
+
+        # ART nullifies all states and all future dates in the natural history
+        hiv.acute = False
+        hiv.latent = False
+        hiv.falling = False
+        future_latent = uids[hiv.ti_latent[uids] > sim.ti]
+        hiv.ti_latent[future_latent] = np.nan
+        future_falling = uids[hiv.ti_falling[uids] > sim.ti]
+        hiv.ti_falling[future_falling] = np.nan
+        future_dead = uids[hiv.ti_dead[uids] > sim.ti]  # NB, if they are scheduled to die on this time step, they will
+        hiv.ti_dead[future_dead] = np.nan
+
+        # Set CD4 potential for anyone new to treatment - retreated people have the same potential
+        # Extract growth parameters
+        if len(newly_treated) > 0:
+            cd4_max = self.pars.art_cd4_pars['cd4_max']
+            cd4_healthy = self.pars.art_cd4_pars['cd4_healthy']
+            cd4_preart = hiv.cd4_preart[newly_treated]
+
+            # Calculate potential CD4 increase - assuming that growth follows the concave part of a logistic function
+            # and that the total gain depends on the CD4 count at initiation
+            cd4_scale_factor = (cd4_max-cd4_preart)/cd4_healthy*np.log(cd4_max/cd4_preart)
+            cd4_total_gain = cd4_preart*cd4_scale_factor
+            hiv.cd4_potential[newly_treated] = hiv.cd4_preart[newly_treated] + cd4_total_gain
+
         return
 
-    def check_stop_ART_treatment(self, sim):
+    def stop_art(self, uids=None):
         """
         Check who is stopping ART treatment and put them off ART
         """
-        # Non-pregnant agents
-        stop_uids = self.check_uids(((~sim.diseases[self.disease].on_art) & (sim.people.pregnancy.pregnant.values)),
-                                    sim.diseases[self.disease].ti_stop_art, sim.ti, filter_uids=None)
-        sim.diseases[self.disease].on_art[stop_uids] = False
-        sim.diseases[self.disease].ti_art[stop_uids] = np.nan
-        sim.diseases[self.disease].ti_stop_art[stop_uids] = np.nan
-        sim.diseases[self.disease].ti_since_untreated[stop_uids] = sim.ti
-        # Pregnant agents
-        stop_uids = self.check_uids(((~sim.diseases[self.disease].on_art) & (~sim.people.pregnancy.pregnant.values)),
-                                    sim.diseases[self.disease].ti_stop_art, sim.ti, filter_uids=None)
-        sim.diseases[self.disease].on_art[stop_uids] = False
-        sim.diseases[self.disease].ti_art[stop_uids] = np.nan
-        sim.diseases[self.disease].ti_stop_art[stop_uids] = np.nan
-        sim.diseases[self.disease].ti_since_untreated[stop_uids] = sim.ti
+        hiv = self.sim.diseases.hiv
+        ti = self.sim.ti
+        dt = self.sim.dt
+
+        # Remove agents from ART
+        if uids is None: uids = hiv.on_art & (hiv.ti_stop_art <= ti)
+        hiv.on_art[uids] = False
+        hiv.cd4_postart[uids] = sc.dcp(hiv.cd4[uids])
+
+        # Set decline
+        dur_post_art = self.pars.dur_post_art.rvs(uids)
+        hiv.ti_zero[uids] = ti + (dur_post_art / dt).astype(int)
+
         return
 
-    def ART_coverage_correction(self, sim, ART_coverage_this_year):
+    def prioritize_art(self, sim, n=None, awaiting_art_uids=None):
         """
-        Adjust number of people on treatment to match data
+        Prioritize ART to n agents among those awaiting treatment
         """
-        infected_uids_onART = sim.diseases[self.disease].diagnosed & sim.diseases[self.disease].on_art
-        infected_uids_not_onART = sim.diseases[self.disease].diagnosed & ~sim.diseases[self.disease].on_art
+        hiv = sim.diseases.hiv
+        if awaiting_art_uids is None:
+            awaiting_art_uids = (hiv.diagnosed & ~hiv.on_art).uids
+
+        # Enough spots for everyone
+        if n > len(awaiting_art_uids):
+            start_uids = awaiting_art_uids
+
+        # Not enough spots - construct weights based on CD4 count and care seeking
+        else:
+            cd4_counts = hiv.cd4[awaiting_art_uids]
+            care_seeking = hiv.care_seeking[awaiting_art_uids]
+            weights = cd4_counts*(1/care_seeking)
+            choices = np.argsort(weights)[:n]
+            start_uids = awaiting_art_uids[choices]
+
+        self.start_art(sim, start_uids)
+
+        return
+
+    def art_coverage_correction(self, sim, target_coverage=None):
+        """
+        Adjust ART coverage to match data
+        """
+        hiv = sim.diseases.hiv
+        on_art = hiv.on_art
 
         # Too many agents on treatment -> remove
-        if len(infected_uids_onART.uids) > ART_coverage_this_year:
+        if len(on_art.uids) > target_coverage:
+
             # Agents with the highest CD4 counts will go off ART:
-            n_agents_to_stop_ART = int(len(infected_uids_onART.uids) - ART_coverage_this_year)
-            cd4_counts_onART = sim.diseases[self.disease].cd4[infected_uids_onART]
-            # Sort
-            uids_onART = infected_uids_onART.uids
-            cd4_counts_sort_idx = np.argsort(cd4_counts_onART)
-            uids_onART_sorted = uids_onART[cd4_counts_sort_idx]
-            # Grab the last n agents with the highest counts
-            probabilities = (cd4_counts_onART / np.sum(cd4_counts_onART))
-            # Probabilities are increasing with CD4 count
-            uids = uids_onART_sorted
-            stop_uids = np.random.choice(uids, n_agents_to_stop_ART, p=probabilities, replace=False)
-            sim.diseases[self.disease].on_art[ss.uids(stop_uids)] = False
-            uids_update_ti_untreated = ss.uids(stop_uids[sim.diseases[self.disease].ti_art[ss.uids(stop_uids)] != sim.ti])
-            sim.diseases[self.disease].ti_art[ss.uids(stop_uids)] = np.nan
-            sim.diseases[self.disease].ti_stop_art[ss.uids(stop_uids)] = np.nan
-            # Only update when agents actually have been on ART:
-            sim.diseases[self.disease].ti_since_untreated[uids_update_ti_untreated] = sim.ti
+            n_to_stop = int(len(on_art.uids) - target_coverage)
+            on_art_uids = on_art.uids
+
+            # Construct weights and choice distribution
+            cd4_counts = hiv.cd4[on_art_uids]
+            care_seeking = hiv.care_seeking[on_art_uids]
+            weights = cd4_counts/care_seeking
+            choices = np.argsort(-weights)[:n_to_stop]
+            stop_uids = on_art_uids[choices]
+
+            hiv.ti_stop_art[stop_uids] = sim.ti
+            self.stop_art(stop_uids)
 
         # Not enough agents on treatment -> add
-        elif len(infected_uids_onART.uids) < ART_coverage_this_year:
-            # Agents with the lowest CD4 count will get on ART:
-            n_agents_to_start_ART = int(ART_coverage_this_year - len(infected_uids_onART.uids))
-            cd4_counts_not_onART = sim.diseases[self.disease].cd4[infected_uids_not_onART]
-            # Sort
-            uids_not_onART = infected_uids_not_onART.uids
-            cd4_counts_sort_idx = np.argsort(cd4_counts_not_onART)
-            uids_not_onART_sorted = uids_not_onART[cd4_counts_sort_idx]
-            probabilities = (cd4_counts_not_onART / np.sum(cd4_counts_not_onART))
-            # Probabilities are increasing with CD4 count, therefore flip uid array:
-            uids = np.flipud(uids_not_onART_sorted)
-            if n_agents_to_start_ART > len(infected_uids_not_onART.uids):
-                start_uids = infected_uids_not_onART.uids
-            else:
-                start_uids = np.random.choice(uids, n_agents_to_start_ART, p=probabilities, replace=False)
-
-            # Put them on ART
-            sim.diseases[self.disease].on_art[ss.uids(start_uids)] = True
-            sim.diseases[self.disease].ti_art[ss.uids(start_uids)] = sim.ti
-
-        return
-
-    def update_ART_pregnancies(self, sim):
-        """
-        Start ART for proportion of pregnant women and put them off ART after 9 months
-        """
-        pregnant_uids = (sim.diseases[self.disease].infected & (sim.people.pregnancy.ti_pregnant == sim.ti)).uids
-
-        # Get the current ARV coverage.
-        if len(self.pars.ART_coverages_df[self.pars.ART_coverages_df['Years'] == sim.year]['Value'].tolist()) > 0:
-            ARV_coverage_this_year = self.pars.ART_coverages_df[self.pars.ART_coverages_df['Years'] == sim.year]['Value'].tolist()[0]
-        else:
-            ARV_coverage_this_year = self.pars.ART_coverages_df.Value.iloc[-1]  # Assume last coverage
-
-        pregnant_to_start_ART = pregnant_uids[np.random.random(len(pregnant_uids)) < ARV_coverage_this_year]
-        sim.diseases[self.disease].on_art[pregnant_to_start_ART] = True
-        sim.diseases[self.disease].ti_art[pregnant_to_start_ART] = sim.ti
-        # Determine when agents goes off ART:
-        sim.diseases[self.disease].ti_stop_art[pregnant_to_start_ART] = sim.ti + 9 # Put them off ART in 9 months
-
-        # Decrease susceptibility for any unborn infants of pregnant women on ART
-        pregnant_onART_uids = (sim.people.pregnancy.pregnant & sim.diseases[self.disease].on_art).uids
-        infants = sim.networks.maternalnet.find_contacts(pregnant_onART_uids)
-        sim.diseases['hiv'].rel_sus[ss.uids(infants)] = 0 # TODO When they're born, do we have to increase susceptibility again?
-        return
-
+        elif len(on_art.uids) < target_coverage:
+            n_to_add = target_coverage - len(on_art.uids)
+            awaiting_art_uids = (hiv.diagnosed & ~hiv.on_art).uids
+            self.prioritize_art(sim, n=n_to_add, awaiting_art_uids=awaiting_art_uids)
 
 
 # %% Validation and other checks -- TODO, should this be an analyzer?
