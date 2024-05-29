@@ -1,14 +1,17 @@
 from .version import __version__, __versiondate__, __license__
-from .utils         import *
-from .networks      import *
-from .interventions import *
-from .diseases      import *
+
 from .connectors    import *
-from .analyzers     import *
+from .diseases      import *
+from .interventions import *
+from .networks      import *
+from .plotting      import *
+from .products      import *
+from .utils         import *
 
 # Assign the root folder
 import sciris as sc
 root = sc.thispath(__file__).parent
+data = root/'data'
 
 # Import the version and print the license
 print(__license__)

@@ -9,7 +9,15 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import sciris as sc
 import stisim as sti
+
+from stisim.networks import StructuredSexual
+from stisim.diseases.syphilis import Syphilis
 from syph_tests import TestProb, ANCTesting, LinkedNewbornTesting, TreatNum
+import stisim as sti
+
+quick_run = False
+ss.options['multirng']=False
+datadir = sti.root/'analyses'/'data'
 
 
 
@@ -17,24 +25,24 @@ def make_syph_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, late
     """ Make a sim with syphilis and genital ulcerative disease """
     syph = sti.Syphilis(
         beta={'structuredsexual': [0.5, 0.25], 'maternal': [0.99, 0]},
-        init_prev_data=pd.read_csv('data/init_prev_syph.csv'),
+        init_prev_data=pd.read_csv(sti.data/'init_prev_syph.csv'),
         rel_trans_latent=latent_trans
     )
     gud = sti.GUD(
         beta={'structuredsexual': [0.5, 0.25], 'maternal': 0},
-        init_prev_data=pd.read_csv('data/init_prev_gud.csv')
+        init_prev_data=pd.read_csv(sti.data/'init_prev_gud.csv')
     )
 
     # Make demographic modules
-    fertility_rates = {'fertility_rate': pd.read_csv(f'data/{location}_asfr.csv')}
+    fertility_rates = {'fertility_rate': pd.read_csv(sti.data/f'{location}_asfr.csv')}
     pregnancy = ss.Pregnancy(pars=fertility_rates)
-    death_rates = {'death_rate': pd.read_csv(f'data/{location}_deaths.csv'), 'units': 1}
+    death_rates = {'death_rate': pd.read_csv(sti.data/f'{location}_deaths.csv'), 'units': 1}
     death = ss.Deaths(death_rates)
 
     # Make people and networks
     ss.set_seed(1)
-    ppl = ss.People(n_agents, age_data=pd.read_csv(f'data/{location}_age.csv'))
-    sexual = sti.StructuredSexual()
+    ppl = ss.People(n_agents, age_data=pd.read_csv(sti.data/f'{location}_age.csv'))
+    sexual = StructuredSexual()
     maternal = ss.MaternalNet()
 
     sim_kwargs = dict(
@@ -59,7 +67,7 @@ def make_testing_intvs():
     # Read in testing probabilities and create an intervention representing the
     # initial visit/consult - this uses risk group/sex/year-specific testing rates
     # representing the probability of someone with symptoms seeking care
-    symp_test_data = pd.read_csv('data/symp_test_prob.csv')
+    symp_test_data = pd.read_csv(sti.data/'symp_test_prob.csv')
     symp_test = TestProb(
         product='symp_test_assigner',
         test_prob_data=symp_test_data,
@@ -104,7 +112,7 @@ def make_testing_intvs():
         pos_list += sim.get_intervention('pos_mgmt').outcomes['treat'].tolist()
         return ss.uids(np.array(list(set(pos_list))))
 
-    treat_data = pd.read_csv('data/treat_prob.csv')
+    treat_data = pd.read_csv(sti.data/'treat_prob.csv')
     max_capacity = np.array([50_000]*31)
     treat_years = np.arange(2000, 2031)
     treat = TreatNum(
@@ -139,7 +147,7 @@ def run_gud(location='zimbabwe', total_pop=100e6, dt=1.0, n_agents=500):
     sim_kwargs = make_syph_sim(location=location, total_pop=total_pop, dt=dt, n_agents=n_agents)
     gud = sti.GUD(
         beta={'structuredsexual': [0.5, 0.25], 'maternal': 0},
-        init_prev_data=pd.read_csv('data/init_prev.csv')
+        init_prev_data=pd.read_csv(sti.data/'init_prev.csv')
     )
     sim_kwargs['diseases'] = gud
     sim = ss.Sim(**sim_kwargs)
