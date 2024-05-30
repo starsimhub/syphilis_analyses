@@ -375,14 +375,7 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, save_
             other_testing,
             low_cd4_testing,
             ART(ART_coverages_df=ART_coverages_df,
-               dur_on_art=ss.normal(loc=18, scale=5),  # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
-               art_efficacy=0.96),
-            # validate_ART(disease='hiv',
-            #             uids=save_agents,
-            #             infect_uids_t=np.repeat(200, len(save_agents)),
-            #             stop_ART=True,
-            #             restart_ART=True)
-            ],
+               dur_on_art=ss.normal(loc=18, scale=5))],
         demographics=[pregnancy, death])
 
     return sim_kwargs

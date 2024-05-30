@@ -168,8 +168,8 @@ class ART(ss.Intervention):
         # Next, see how many people we need to treat vs how many are already being treated
         ART_coverage = ART_coverage_this_year
         inf_uids = hiv.infected.uids
-        # dx_uids = hiv.diagnosed.uids
-        n_to_treat = int(ART_coverage*len(inf_uids))
+        dx_uids = hiv.diagnosed.uids
+        n_to_treat = int(ART_coverage*len(dx_uids))
         on_art = hiv.on_art
 
         # A proportion of newly diagnosed agents onto ART will be willing to initiate ART
@@ -212,9 +212,9 @@ class ART(ss.Intervention):
         hiv.ti_stop_art[uids] = ti + (dur_on_art / dt).astype(int)
 
         # ART nullifies all states and all future dates in the natural history
-        hiv.acute = False
-        hiv.latent = False
-        hiv.falling = False
+        hiv.acute[uids] = False
+        hiv.latent[uids] = False
+        hiv.falling[uids] = False
         future_latent = uids[hiv.ti_latent[uids] > sim.ti]
         hiv.ti_latent[future_latent] = np.nan
         future_falling = uids[hiv.ti_falling[uids] > sim.ti]
@@ -305,68 +305,10 @@ class ART(ss.Intervention):
             self.stop_art(stop_uids)
 
         # Not enough agents on treatment -> add
-<<<<<<< HEAD
-        elif len(infected_uids_onART.uids) < ART_coverage_this_year:
-            # Agents with the lowest CD4 count will get on ART:
-            n_agents_to_start_ART = int(ART_coverage_this_year - len(infected_uids_onART.uids))
-            cd4_counts_not_onART = sim.diseases[self.disease].cd4[infected_uids_not_onART]
-            # Sort
-            uids_not_onART = infected_uids_not_onART.uids
-            cd4_counts_sort_idx = np.argsort(cd4_counts_not_onART)
-            uids_not_onART_sorted = uids_not_onART[cd4_counts_sort_idx]
-            probabilities = (cd4_counts_not_onART / np.sum(cd4_counts_not_onART))
-            # Probabilities are increasing with CD4 count, therefore flip uid array:
-            uids = np.flipud(uids_not_onART_sorted)
-            if n_agents_to_start_ART > len(infected_uids_not_onART.uids):
-                start_uids = infected_uids_not_onART.uids
-            else:
-                start_uids = np.random.choice(uids, n_agents_to_start_ART, p=probabilities, replace=False)
-
-            # Put them on ART
-            sim.diseases[self.disease].on_art[ss.uids(start_uids)] = True
-            sim.diseases[self.disease].ti_art[ss.uids(start_uids)] = sim.ti
-
-        return
-
-    def update_ART_pregnancies(self, sim):
-        """
-        Start ART for proportion of pregnant women and put them off ART after 9 months
-        """
-        pregnant_uids = (sim.diseases[self.disease].infected & (sim.people.pregnancy.ti_pregnant == sim.ti)).uids
-
-        # Get the current ARV coverage.
-        if len(self.pars.ART_coverages_df[self.pars.ART_coverages_df['Years'] == sim.year]['Value'].tolist()) > 0:
-            ARV_coverage_this_year = self.pars.ART_coverages_df[self.pars.ART_coverages_df['Years'] == sim.year]['Value'].tolist()[0]
-        else:
-            ARV_coverage_this_year = self.pars.ART_coverages_df.Value.iloc[-1]  # Assume last coverage
-
-        pregnant_to_start_ART = pregnant_uids[np.random.random(len(pregnant_uids)) < ARV_coverage_this_year]
-        sim.diseases[self.disease].on_art[pregnant_to_start_ART] = True
-        sim.diseases[self.disease].ti_art[pregnant_to_start_ART] = sim.ti
-        # Determine when agents goes off ART:
-        sim.diseases[self.disease].ti_stop_art[pregnant_to_start_ART] = sim.ti + 9 # Put them off ART in 9 months
-
-        # Decrease susceptibility for any unborn infants of pregnant women on ART
-        pregnant_onART_uids = (sim.people.pregnancy.pregnant & sim.diseases[self.disease].on_art).uids
-        infants = sim.networks.maternalnet.find_contacts(pregnant_onART_uids)
-        # TODO Update! Susceptibility should increase again later
-        sim.diseases['hiv'].rel_sus[ss.uids(infants)] = 0
-        return
-
-
-class DualTest(ss.Intervention):
-    """ Dial test for diagnosing HIV and syphilis """
-    def __init__(self, pars=None):
-        return
-
-    def apply(self):
-        return
-=======
         elif len(on_art.uids) < target_coverage:
             n_to_add = target_coverage - len(on_art.uids)
             awaiting_art_uids = (hiv.diagnosed & ~hiv.on_art).uids
             self.prioritize_art(sim, n=n_to_add, awaiting_art_uids=awaiting_art_uids)
->>>>>>> 9f2386d42bb5eb78ac3f4d4bb770b27d3fe0fcdf
 
 
 # %% Validation and other checks -- TODO, should this be an analyzer?
