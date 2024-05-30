@@ -19,6 +19,10 @@ ss_float_ = ss.dtypes.float
 # Specify all externally visible functions this file defines; see also more definitions below
 __all__ = ['StructuredSexual']
 
+class NoPartnersFound(Exception):
+    # Raise this exception if the matching algorithm wasn't able to match any partners
+    pass
+
 
 class StructuredSexual(ss.SexualNetwork):
     """
@@ -78,20 +82,20 @@ class StructuredSexual(ss.SexualNetwork):
                 adult=[(100, 1), (12, 3), (1e-4, 1e-4)],
             ),
             casual_dur_pars=dict(
-                teens=[(1, 0.25)]*3,  # (mu,stdev) for levels 0, 1, 2
-                young=[(1, 0.25)]*3,
-                adult=[(1, 0.25)]*3,
+                teens=[(0.1, 0.25)]*3,  # (mu,stdev) for levels 0, 1, 2
+                young=[(0.1, 0.25)]*3,
+                adult=[(0.1, 0.25)]*3,
             ),
 
             # Acts
-            acts=ss.normal(loc=90, scale=30),  # Annual acts
+            acts=ss.lognorm_ex(90, 30),  # Annual acts
 
             # Sex work parameters
-            fsw_shares=ss.bernoulli(p=0.02),
+            fsw_shares=ss.bernoulli(p=0.05),
             client_shares=ss.bernoulli(p=0.12),
             sw_seeking_rate=0.5,  # Annual rate at which clients seek FSWs (0.5 = 1 new SW partner every 2 years)
             sw_seeking_dist=ss.bernoulli(p=0.5),  # Placeholder value replaced by dt-adjusted sw_seeking_rate
-            sw_beta=0.5,  # Replace with condom use
+            sw_beta=1,  # Replace with condom use
 
             # Distributions derived from parameters above - don't adjust
             age_diffs=ss.normal(loc=self.age_diff_fn_loc, scale=self.age_diff_fn_scale),
@@ -228,6 +232,9 @@ class StructuredSexual(ss.SexualNetwork):
         m_eligible = m_active & underpartnered
         f_looking = self.pars.p_pair_form.filter(f_eligible.uids)  # ss.uids of women looking for partners
 
+        if len(f_looking) == 0 or m_eligible.count() == 0:
+            raise NoPartnersFound()
+
         # Get mean age differences and desired ages
         age_gaps = self.pars.age_diffs.rvs(f_looking)   # Sample the age differences
         desired_ages = ppl.age[f_looking] + age_gaps    # Desired ages of the male partners
@@ -258,7 +265,11 @@ class StructuredSexual(ss.SexualNetwork):
         """ Add pairs """
         ppl = self.sim.people
         dt = self.sim.dt
-        p1, p2 = self.match_pairs(ppl)
+
+        try:
+            p1, p2 = self.match_pairs(ppl)
+        except NoPartnersFound:
+            return
 
         # Initialize beta, acts, duration
         beta = pd.Series(1., index=p2)
