@@ -212,9 +212,9 @@ class ART(ss.Intervention):
         hiv.ti_stop_art[uids] = ti + (dur_on_art / dt).astype(int)
 
         # ART nullifies all states and all future dates in the natural history
-        hiv.acute = False
-        hiv.latent = False
-        hiv.falling = False
+        hiv.acute[uids] = False
+        hiv.latent[uids] = False
+        hiv.falling[uids] = False
         future_latent = uids[hiv.ti_latent[uids] > sim.ti]
         hiv.ti_latent[future_latent] = np.nan
         future_falling = uids[hiv.ti_falling[uids] > sim.ti]
