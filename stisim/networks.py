@@ -53,8 +53,12 @@ class StructuredSexual(ss.SexualNetwork):
             debut_m=ss.lognorm_ex(21, 3),
 
             # Risk groups
-            risk_groups_f=ss.choice(a=3, p=np.array([0.85, 0.14, 0.01])),
-            risk_groups_m=ss.choice(a=3, p=np.array([0.78, 0.21, 0.01])),
+            prop_f1 = 0.15,
+            prop_m1 = 0.2,
+            prop_f2 = 0.01,
+            prop_m2 = 0.02,
+            risk_groups_f = ss.choice(a=3),
+            risk_groups_m = ss.choice(a=3),
 
             # Age difference preferences
             age_diff_pars=dict(
@@ -187,6 +191,10 @@ class StructuredSexual(ss.SexualNetwork):
     def set_risk_groups(self, upper_age=None):
         """ Assign each person to a risk group """
         f_uids, m_uids = self._get_uids(upper_age=upper_age)
+        risk_groups_f = np.array([1-self.pars.prop_f1-self.pars.prop_f2, self.pars.prop_f1, self.pars.prop_f2])
+        self.pars.risk_groups_f.set(p=risk_groups_f)
+        risk_groups_m = np.array([1-self.pars.prop_m1-self.pars.prop_m2, self.pars.prop_m1, self.pars.prop_m2])
+        self.pars.risk_groups_m.set(p=risk_groups_m)
         self.risk_group[f_uids] = self.pars.risk_groups_f.rvs(f_uids)
         self.risk_group[m_uids] = self.pars.risk_groups_m.rvs(m_uids)
         return
