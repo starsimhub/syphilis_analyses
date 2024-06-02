@@ -375,24 +375,19 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, save_
             other_testing,
             low_cd4_testing,
             ART(ART_coverages_df=ART_coverages_df,
-               dur_on_art=ss.normal(loc=18, scale=5),  # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
+               dur_on_art=ss.lognorm_ex(7, 3),  # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
                art_efficacy=0.96),
-            # validate_ART(disease='hiv',
-            #             uids=save_agents,
-            #             infect_uids_t=np.repeat(200, len(save_agents)),
-            #             stop_ART=True,
-            #             restart_ART=True)
             ],
         demographics=[pregnancy, death])
 
     return sim_kwargs
 
 
-def run_hiv(location='zimbabwe', total_pop=100e6, dt=1.0, n_agents=500, save_agents=np.array([0])):
+def run_hiv(location='zimbabwe', total_pop=100e6, dt=1.0, n_agents=500):
     """
     Make and run the sim
     """
-    sim_kwargs = make_hiv_sim(location=location, total_pop=total_pop, dt=dt, n_agents=n_agents, save_agents=save_agents)
+    sim_kwargs = make_hiv_sim(location=location, total_pop=total_pop, dt=dt, n_agents=n_agents)
     sim = ss.Sim(**sim_kwargs)
     sim.run()
     df_res = sim.export_df()
@@ -406,16 +401,9 @@ if __name__ == '__main__':
         nigeria=93963392,
         zimbabwe=9980999,
     )[location]
-    save_agents = np.arange(0, 40)
 
-    sim, output = run_hiv(location=location, total_pop=total_pop, dt=1 / 12, n_agents=int(1e4),
-                          save_agents=save_agents)
-    output.to_csv("HIV_output.csv")
-
-    # Call method in validate_ART intervention:
-    # sim.get_interventions(validate_ART)[0].save_viral_histories(sim)
-    # viral_histories = pd.read_csv("viral_histories.csv", index_col=0)
-    # plot_viral_dynamics(viral_histories, save_agents)
+    sim, output = run_hiv(location=location, total_pop=total_pop, dt=1 / 12, n_agents=int(1e4))
+    # output.to_csv("HIV_output.csv")
 
     plot_hiv(output)
 

@@ -204,7 +204,7 @@ class Calibration(sc.prettyobj):
                 return output
 
     def translate_pars(self, sim=None, calib_pars=None):
-        """ Translate pardict to sim kwargs """
+        """ Take pardict and modify to sim kwargs """
         # Set the parameters in each module
         for modtype in calib_pars.keys():
             for dkey, dpars in calib_pars[modtype].items():
