@@ -8,13 +8,13 @@ import concurrent.futures
 import threading
 import time
 from pathlib import Path
-from celery import group
 from tqdm import tqdm
 import numpy as np
 import starsim as ss
-from stisim.celery import run_sim
+from hiv_celery import run_sim
+from celery import group
 from stisim.multisim import MultiSim
-from stisim.celery import celery
+from hiv_celery import celery
 from starsim import Samples
 import sciris as sc
 from stisim.plotting import plot_hiv
@@ -29,16 +29,16 @@ to_run = []
 
 def get_betas(mean_beta, std_beta, nruns=None):
     seeds = np.arange(nruns)
-    # betas = np.random.normal(mean_beta, std_beta, nruns)
-    return seeds  # , betas
+    betas = np.random.normal(mean_beta, std_beta, nruns)
+    return seeds, betas
 
 
 def run_scenario(kwargs, filter=False):
     nruns = kwargs['nruns']
     del kwargs['nruns']
 
-    seeds = get_betas(1, 1, nruns)
-    description_baseline = 'calibration'
+    seeds, hiv_betas = get_betas(kwargs['ss_hiv_beta'], 1, nruns)
+    description_baseline = kwargs['save_as']
 
     if not hasattr(thread_local, "pbar"):
         thread_local.pbar = tqdm(total=len(seeds))
@@ -54,6 +54,7 @@ def run_scenario(kwargs, filter=False):
         return
     tasks = []
     for seed in seeds:
+        kwargs['ss_hiv_beta'] = hiv_betas[seed]
         tasks.append(run_sim.s(seed, **kwargs))
 
     job = group(*tasks)
@@ -97,38 +98,50 @@ if __name__ == '__main__':
 
     # Load calibration csv:
     calibration_scenarios = pd.read_csv("calibration_scenarios.csv")
-    for row, scenario in calibration_scenarios.iterrows():
-        if scenario['to_run'] == 'Y':
-            init_prev = scenario['init_prev']
-            ss_hiv_beta = scenario['ss_hiv_beta']
-            maternal_hiv_beta = scenario['maternal_hiv_beta']
-            mean_duration_onART = scenario['dur_on_ART_mean']
-            mean_initial_cd4 = scenario['mean_initial_cd4']
-            risk_groups_f_probs = np.array([scenario['f0_prob'], scenario['f1_prob'], scenario['f2_prob']])
-            risk_groups_m_probs = np.array([scenario['m0_prob'], scenario['m1_prob'], scenario['m2_prob']])
-            conc = {'f': [scenario['f0_conc'], scenario['f1_conc'], scenario['f2_conc']],
-                    'm': [scenario['m0_conc'], scenario['m1_conc'], scenario['m2_conc']]}
-            p_pair_form = scenario['p_pair_form']
-            calibration_name = scenario['calibration_name']
+    ss_hiv_betas = [0.01, 0.02, 0.04, 0.06, 0.08, 0.1]
+    maternal_hiv_betas = [0.05, 0.1, 0.2, 0.4, 0.6, 0.8]
+    dur_on_ART_means = [18]
+    mean_initial_cd4s = [400, 600, 800, 1000]
+    risk_groups_f_probs = [np.array([0.85, 0.14, 0.01])]
+    risk_groups_m_probs = [np.array([0.78, 0.21, 0.01])]
+    p_pair_forms = [0.5]
+    concs = [{'f': [0.0001, 0.01, 0.1],
+             'm': [0.01, 0.2, 0.5]}]
+    idx = 0
+    for ss_hiv_beta in ss_hiv_betas:
+        for maternal_hiv_beta in maternal_hiv_betas:
+            for dur_on_ART_mean in dur_on_ART_means:
+                for mean_initial_cd4 in mean_initial_cd4s:
+                    for risk_groups_f_prob in risk_groups_f_probs:
+                        for risk_groups_m_prob in risk_groups_m_probs:
+                            for p_pair_form in p_pair_forms:
+                                for conc in concs:
+                                    init_prev = 0.15
+                                    ss_hiv_beta = ss_hiv_beta
+                                    maternal_hiv_beta = maternal_hiv_beta
+                                    mean_duration_onART = dur_on_ART_mean
+                                    mean_initial_cd4 = mean_initial_cd4
+                                    calibration_name = 'scenario_' + str(idx)
 
-            kwargs = {'location': location,
-                      'total_pop': total_pop,
-                      'dt': 1 / 12,
-                      'n_agents': int(1e4),
-                      'init_prev': ss.bernoulli(p=init_prev),
-                      'cd4_start_dist': ss.lognorm_ex(mean=mean_initial_cd4, stdev=10),
-                      'ss_hiv_beta': ss_hiv_beta,
-                      'risk_groups_f': ss.choice(a=3, p=risk_groups_f_probs),
-                      'risk_groups_m': ss.choice(a=3, p=risk_groups_m_probs),
-                      'p_pair_form': ss.bernoulli(p=p_pair_form),
-                      'maternal_hiv_beta': maternal_hiv_beta,
-                      'duration_on_ART': ss.lognorm_ex(mean=mean_duration_onART, stdev=5),
-                      'conc': conc,
-                      'return_sim': True,
-                      'save_as': calibration_name}
+                                    kwargs = {'location': location,
+                                              'total_pop': total_pop,
+                                              'dt': 1 / 12,
+                                              'n_agents': int(1e4),
+                                              'init_prev': ss.bernoulli(p=init_prev),
+                                              'cd4_start_dist': ss.lognorm_ex(mean=mean_initial_cd4, stdev=10),
+                                              'ss_hiv_beta': ss_hiv_beta,
+                                              'risk_groups_f': ss.choice(a=3, p=risk_groups_f_prob),
+                                              'risk_groups_m': ss.choice(a=3, p=risk_groups_m_prob),
+                                              'p_pair_form': ss.bernoulli(p=p_pair_form),
+                                              'maternal_hiv_beta': maternal_hiv_beta,
+                                              'duration_on_ART': ss.lognorm_ex(mean=mean_duration_onART, stdev=5),
+                                              'conc': conc,
+                                              'return_sim': False,
+                                              'save_as': calibration_name}
 
-            to_run.append(kwargs)
-
+                                    to_run.append(kwargs)
+                                    idx += 1
+    to_run = to_run[0:1]
     parser = argparse.ArgumentParser()
     parser.add_argument("--nruns", default=10, type=int, help="Number of seeds to run per scenario")
     parser.add_argument("--celery", default=False, type=bool, help="If True, use Celery for parallelization")
@@ -185,7 +198,7 @@ if __name__ == '__main__':
                 sim_output = output[0]
                 save = str(to_run[idx]["save_as"])
                 sim_output.to_csv(location + "_calibration//" + save + ".csv")
-                plot_hiv(sim_output, location='zimbabwe', total_pop=9980999, save=save)
+                # plot_hiv(sim_output, location='zimbabwe', total_pop=9980999, save=save)
         else:
             with sc.Timer(label="Run model") as _:
                 outputs = [run_sim(0, **kwargs)]

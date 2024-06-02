@@ -284,10 +284,12 @@ class HIV(ss.Infection):
         hiv_deaths = self._death_prob.filter(self.infected.uids)
         if len(hiv_deaths):
             self.sim.people.request_death(hiv_deaths)
+            self.ti_dead[hiv_deaths] = ti
         if self.pars.include_aids_deaths:
             aids_deaths = (self.ti_zero <= ti).uids
             if len(aids_deaths):
                 self.sim.people.request_death(aids_deaths)
+                self.ti_dead[aids_deaths] = ti
         return
 
     def update_transmission(self):

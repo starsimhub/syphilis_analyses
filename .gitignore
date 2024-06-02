@@ -125,3 +125,4 @@ flake8_junit.xml
 .idea
 *.png
 *.obj
+*.zip
