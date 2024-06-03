@@ -13,12 +13,14 @@ import numpy as np
 import starsim as ss
 from hiv_celery import run_sim
 from celery import group
-from stisim.multisim import MultiSim
 from hiv_celery import celery
 from starsim import Samples
 import sciris as sc
 from stisim.plotting import plot_hiv
 import pandas as pd
+from socket import error as SocketError
+import errno
+import urllib.request
 
 quick_run = False
 ss.options['multirng'] = False
@@ -84,7 +86,15 @@ def run_scenario(kwargs, filter=False):
                 with open(result_dir / f"error_{x.id}.txt", "w") as log:
                     log.write(str(x.__dict__))
 
-    result.forget()
+    try:
+        time.sleep(2)
+        result.forget()
+    except SocketError as err:
+        if err.errno != errno.ECONNRESET:
+            # The error is NOT a ConnectionResetError
+            raise
+        time.sleep(10)
+        result.forget() # Try again?
 
     return True
 
@@ -184,7 +194,7 @@ if __name__ == '__main__':
                     pbar.refresh()
                     if len(done) == len(futures):
                         break
-                    time.sleep(1)
+                    time.sleep(5)
 
         # Shut down the workers
         celery.control.shutdown()
