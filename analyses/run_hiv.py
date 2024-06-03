@@ -2,93 +2,31 @@
 Run hiv
 """
 
+# Additions to handle numpy multithreading
+import os
+os.environ.update(
+    OMP_NUM_THREADS = '1',
+    OPENBLAS_NUM_THREADS = '1',
+    NUMEXPR_NUM_THREADS = '1',
+    MKL_NUM_THREADS = '1',
+)
 # %% Imports and settings
 import numpy as np
 import starsim as ss
 import pandas as pd
 import matplotlib.pyplot as plt
 import sciris as sc
-from io import StringIO
-import seaborn as sns
 import stisim as sti
-from stisim.networks import StructuredSexual
-from stisim.products import Dx
-from stisim.diseases.hiv import HIV
-from stisim.interventions import ART, validate_ART, HIVTest
 from matplotlib.ticker import FuncFormatter
 import matplotlib.patches as mpatches
 from matplotlib.lines import Line2D
 
-quick_run = False
-ss.options['multirng'] = False
 
-def plot_T_level(sim_output):
-    """
-    Single plot of CD4 counts
-    """
-    fig, ax = plt.subplots(1, 1, figsize=(5, 4))
-    # Plot the first 40 days only:
-    sim_output_sub = sim_output.iloc[0:40]
-    plt.plot(np.arange(0, 40, 1), sim_output_sub['hiv.Agent' + str(11) + '_T_level'])
-    ax.set_xlabel('Time (days)')
-    ax.set_ylabel('CD4-count (cells/uL)')
-    ax.set_title('CD4-count (cells/uL)')
-    fig.tight_layout()
-    sc.savefig("figures/cd4_counts.png", dpi=100)
-
-
-def plot_V_level(sim_output):
-    """
-    Single Plot of viral load
-    """
-    fig, ax = plt.subplots(1, 1, figsize=(5, 4))
-    # Plot the first 40 days only:
-    sim_output_sub = sim_output.iloc[0:40]
-    plt.plot(np.arange(0, 40, 1), sim_output_sub['hiv.Agent' + str(11) + '_V_level'])
-    ax.set_xlabel('Time (days)')
-    ax.set_yscale('log')
-    ax.set_ylabel('Viral load (copies/mL)')
-    ax.set_title('Viral load (copies/mL)')
-    fig.tight_layout()
-    sc.savefig("figures/viral_loads.png", dpi=100)
-
-
-def plot_viral_dynamics(output, save_agents):
-    """
-    2 Subplots to show transmission probability and CD4 counts
-    """
-    tivec = np.arange(start=1990, stop=2030 + 1 / 12, step=1 / 12)
-    for index, agent in enumerate(save_agents):
-        fig, ax = plt.subplots(1, 2, figsize=(25, 8))
-        df_this_agent = output[output.columns[output.columns.str.contains('_' + str(agent))]].dropna()
-        sns.scatterplot(ax=ax[0], x=df_this_agent.index, y="transmission_" + str(agent), data=df_this_agent,
-                        hue='ART_status_' + str(agent))
-        sns.scatterplot(ax=ax[1], x=df_this_agent.index, y="cd4_count_" + str(agent), data=df_this_agent,
-                        hue='ART_status_' + str(agent))
-
-        ax[0].xaxis.set_ticks(df_this_agent.index[::12 * 5])
-        ax[0].set_xticklabels(np.ceil(tivec[df_this_agent.index][::12 * 5]).astype(int))
-        ax[1].xaxis.set_ticks(df_this_agent.index[::12 * 5])
-        ax[1].set_xticklabels(np.ceil(tivec[df_this_agent.index][::12 * 5]).astype(int))
-
-        ax[0].set_xlabel('Time')
-        # ax[0].set_yscale('log')
-        ax[0].set_ylim([0, 7])
-        ax[0].set_xlim([0, len(output)])
-        ax[0].set_ylabel('Transmission probability')
-        ax[0].set_title('Transmission probability')
-
-        # CD4-count
-        ax[1].set_xlabel('Time')
-        ax[1].set_ylabel('CD4-count')
-        ax[1].set_title('CD4-count')
-        ax[1].set_ylim([0, 1000])
-        ax[1].set_xlim([0, len(output)])
-
-        ax[0].legend()
-        fig.tight_layout()
-        sc.savefig("figures/individual_viral_dynamics/viral_dynamics_agent_" + str(agent) + ".png", dpi=100)
-        plt.close()
+# Run settings
+debug = False
+n_trials    = [1000, 4][debug]  # How many trials to run for calibration
+n_workers   = [40, 2][debug]    # How many cores to use
+storage     = ["mysql://hpvsim_user@localhost/hpvsim_db", None][debug]  # Storage for calibrations
 
 
 def plot_hiv(sim_output):
@@ -275,7 +213,7 @@ def get_testing_products():
 
     # Eligible for testing are FSW agents who haven't been diagnosed or treated yet
     fsw_eligible = lambda sim: sim.networks.structuredsexual.fsw & ~sim.diseases.hiv.diagnosed & ~sim.diseases.hiv.on_art
-    fsw_testing = HIVTest(
+    fsw_testing = sti.HIVTest(
         years=tivec,
         test_prob_data=FSW_prop,
         name='fsw_testing',
@@ -289,7 +227,7 @@ def get_testing_products():
 
     # Eligible for testing are non-FSW agents who haven't been diagnosed or treated yet
     other_eligible = lambda sim: ~sim.networks.structuredsexual.fsw & ~sim.diseases.hiv.diagnosed & ~sim.diseases.hiv.on_art
-    other_testing = HIVTest(
+    other_testing = sti.HIVTest(
         years=tivec,
         test_prob_data=other_prop,
         name='other_testing',
@@ -302,7 +240,7 @@ def get_testing_products():
     ####################################################################################################################
     # Eligible for testing are agents, who haven't been diagnosed yet and whose CD4 count is below 200.
     low_cd4_eligible = lambda sim: (sim.diseases.hiv.cd4 < 200) & ~sim.diseases.hiv.diagnosed
-    low_cd4_testing = HIVTest(
+    low_cd4_testing = sti.HIVTest(
         years=tivec,
         test_prob_data=low_cd4count_prop,
         name='low_cd4_testing',
@@ -320,23 +258,14 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, save_
     ####################################################################################################################
     # HIV Params
     ####################################################################################################################
-    hiv = HIV(
+    hiv = sti.HIV(
         beta={'structuredsexual': [0.05, 0.025], 'maternal': [0.05, 0.]},
         init_prev=0.07,
+        beta_m2f=0.05,
+        beta_f2m=0.025,
+        beta_m2c=0.025,
         init_diagnosed=0.0,  # Proportion of initially infected agents who start out as diagnosed
     )
-
-    ####################################################################################################################
-    # Treatment Data
-    ####################################################################################################################
-    ART_coverages_raw = pd.read_csv(sti.data/f'world_bank_art_coverages.csv', skiprows=4).set_index('Country Name').loc[location.capitalize()].dropna()[3:]
-    tivec = np.arange(start=1990, stop=2021 + 1 / 12, step=1 / 12)
-    ART_coverages_df = pd.DataFrame({"Years": tivec,
-                                     "Value": (np.interp(tivec,
-                                                         ART_coverages_raw.index.astype(int).tolist(),
-                                                         (ART_coverages_raw.values / 100).tolist()))})
-
-    hiv.pars['ART_coverages_df'] = ART_coverages_df
 
     ####################################################################################################################
     # Make demographic modules
@@ -351,13 +280,18 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, save_
     ####################################################################################################################
     ss.set_seed(1)
     ppl = ss.People(n_agents, age_data=pd.read_csv(sti.data/f'{location}_age.csv'))
-    sexual = StructuredSexual()
+    sexual = sti.StructuredSexual()
     maternal = ss.MaternalNet()
 
     ####################################################################################################################
-    # Products and testing
+    # Testing and treatment
     ####################################################################################################################
+    n_art = pd.read_csv(sti.data/'zimbabwe_art.csv').set_index('year')
     fsw_testing, other_testing, low_cd4_testing = get_testing_products()
+    art = sti.ART(
+        coverage_data=n_art,
+        dur_on_art=ss.lognorm_ex(15, 3),  # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
+    )
 
     ####################################################################################################################
     # Sim
@@ -374,23 +308,79 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, save_
             fsw_testing,
             other_testing,
             low_cd4_testing,
+<<<<<<< HEAD
             ART(ART_coverages_df=ART_coverages_df,
                dur_on_art=ss.normal(loc=18, scale=5))],
+=======
+            art,
+        ],
+>>>>>>> af169af5ca7543473de0880258c081248b27da18
         demographics=[pregnancy, death])
 
     return sim_kwargs
 
 
-def run_hiv(location='zimbabwe', total_pop=100e6, dt=1.0, n_agents=500, save_agents=np.array([0])):
+def run_hiv(location='zimbabwe', total_pop=100e6, dt=1.0, n_agents=500):
     """
     Make and run the sim
     """
-    sim_kwargs = make_hiv_sim(location=location, total_pop=total_pop, dt=dt, n_agents=n_agents, save_agents=save_agents)
+    sim_kwargs = make_hiv_sim(location=location, total_pop=total_pop, dt=dt, n_agents=n_agents)
     sim = ss.Sim(**sim_kwargs)
     sim.run()
     df_res = sim.export_df()
     df = pd.DataFrame.from_dict(df_res)
     return sim, df
+
+
+def run_calibration(n_trials=None, n_workers=None, do_save=True):
+
+    # Define the calibration parameters
+    calib_pars = dict(
+        diseases = dict(
+            hiv = dict(
+                beta_m2f = [0.05, 0.01, 0.10],
+                beta_f2m = [0.025, 0.005, 0.05],
+            ),
+        ),
+        networks = dict(
+            structuredsexual = dict(
+                prop_f1 = [0.15, 0.1, 0.45],
+                prop_m1 = [0.21, 0.15, 0.5],
+                f1_conc = [0.01, 0.005, 0.1],
+                m1_conc = [0.01, 0.005, 0.1],
+                p_pair_form = [0.5, 0.4, 0.9],
+            ),
+        ),
+    )
+
+    # Make the sim
+    sim_kwargs = make_hiv_sim(location='zimbabwe', total_pop=9980999, dt=1/12, n_agents=10e3)
+    sim = ss.Sim(**sim_kwargs)
+
+    # Weight the data
+    weights = {
+        'n_alive': 1,
+        'hiv.prevalence': 1,
+        'hiv.n_infected': 1,
+        'hiv.new_infections': 1,
+        'hiv.new_deaths': 1,
+        }
+
+    # Make the calibration
+    calib = sti.Calibration(
+        calib_pars = calib_pars,
+        sim = sim,
+        datafile=sti.data/'zimbabwe_calib.csv',
+        weights=weights,
+        total_trials=n_trials, n_workers=n_workers, die=True
+    )
+
+    calib.calibrate()
+    filename = f'zim_calib'
+    sc.saveobj(f'results/{filename}.obj', calib)
+    print(f'Best pars are {calib.best_pars}')
+
+    return sim, calib
 
 
 if __name__ == '__main__':
@@ -399,17 +389,12 @@ if __name__ == '__main__':
         nigeria=93963392,
         zimbabwe=9980999,
     )[location]
-    save_agents = np.arange(0, 40)
 
-    sim, output = run_hiv(location=location, total_pop=total_pop, dt=1 / 12, n_agents=int(1e4),
-                          save_agents=save_agents)
-    output.to_csv("HIV_output.csv")
+    # sim, output = run_hiv(location=location, total_pop=total_pop, dt=1 / 12, n_agents=int(1e4))
+    # output.to_csv("HIV_output.csv")
+    # plot_hiv(output)
+    # sc.saveobj(f'sim_{location}.obj', sim)
 
-    # Call method in validate_ART intervention:
-    # sim.get_interventions(validate_ART)[0].save_viral_histories(sim)
-    # viral_histories = pd.read_csv("viral_histories.csv", index_col=0)
-    # plot_viral_dynamics(viral_histories, save_agents)
+    # Calibration
+    sim, calib = run_calibration(n_trials=n_trials, n_workers=n_workers)
 
-    plot_hiv(output)
-
-    sc.saveobj(f'sim_{location}.obj', sim)

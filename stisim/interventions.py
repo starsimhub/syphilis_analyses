@@ -67,8 +67,6 @@ class HIVTest(ss.Intervention):
         elif sc.checktype(self.test_prob_data, 'arraylike'):
             year_ind = sc.findnearest(self.years, sim.year)
             test_prob = self.test_prob_data[year_ind]
-            test_prob = test_prob * self.pars.rel_test * sim.dt
-            test_prob = np.clip(test_prob, a_min=0, a_max=1)
         else:
             errormsg = 'Format of test_prob_data must be float or array.'
             raise ValueError(errormsg)
@@ -111,22 +109,24 @@ class ART(ss.Intervention):
     ART-treatment intervention by Robyn Stuart, Daniel Klein and Cliff Kerr, edited by Alina Muellenmeister
     """
 
-    def __init__(self, pars=None, **kwargs):
+    def __init__(self, pars=None, coverage_data=None, **kwargs):
         super().__init__()
         self.default_pars(
-            ART_coverages_df=None,
-            ARV_coverages_df=None,
             dur_on_art=ss.normal(loc=18, scale=5),
             dur_post_art=ss.normal(loc=self.dur_post_art_mean, scale=self.dur_post_art_scale),
             dur_post_art_scale_factor=0.1,
             art_cd4_pars=dict(cd4_max=1000, cd4_healthy=500),
             init_prob=ss.bernoulli(p=0.9),  # Probability that a newly diagnosed person will initiate treatment
-            )
+            future_coverage={'year': 2022, 'prop':0.9},
+        )
         self.update_pars(pars, **kwargs)
+        self.coverage_data = coverage_data
+        self.coverage = None  # Set below
         return
 
     def initialize(self, sim):
         super().initialize(sim)
+        self.coverage = sc.smoothinterp(sim.yearvec, self.coverage_data.index.values, self.coverage_data.n_art.values)
         self.initialized = True
         return
 
@@ -152,12 +152,14 @@ class ART(ss.Intervention):
         Apply the ART intervention at each time step. Put agents on and off ART and adjust based on data.
         """
         hiv = sim.diseases.hiv
+        inf_uids = hiv.infected.uids
 
-        # Get the current ART coverage. If year is not available, assume 90%
-        if len(self.pars.ART_coverages_df[self.pars.ART_coverages_df['Years'] == sim.year]['Value'].tolist()) > 0:
-            ART_coverage_this_year = self.pars.ART_coverages_df[self.pars.ART_coverages_df['Years'] == sim.year]['Value'].tolist()[0]
+        # Figure out how many people should be treated
+        if sim.year < self.pars.future_coverage['year']:
+            n_to_treat = int(self.coverage[sim.ti]/sim.pars.pop_scale)
         else:
-            ART_coverage_this_year = self.pars.ART_coverages_df.Value.iloc[-1]  # Assume last coverage
+            p_cov = self.pars.future_coverage['prop']
+            n_to_treat = int(p_cov*len(inf_uids))
 
         # Firstly, check who is stopping ART
         if hiv.on_art.any():
@@ -219,8 +221,8 @@ class ART(ss.Intervention):
         hiv.ti_latent[future_latent] = np.nan
         future_falling = uids[hiv.ti_falling[uids] > sim.ti]
         hiv.ti_falling[future_falling] = np.nan
-        future_dead = uids[hiv.ti_dead[uids] > sim.ti]  # NB, if they are scheduled to die on this time step, they will
-        hiv.ti_dead[future_dead] = np.nan
+        future_zero = uids[hiv.ti_zero[uids] > sim.ti]  # NB, if they are scheduled to die on this time step, they will
+        hiv.ti_zero[future_zero] = np.nan
 
         # Set CD4 potential for anyone new to treatment - retreated people have the same potential
         # Extract growth parameters
@@ -311,86 +313,3 @@ class ART(ss.Intervention):
             self.prioritize_art(sim, n=n_to_add, awaiting_art_uids=awaiting_art_uids)
 
 
-# %% Validation and other checks -- TODO, should this be an analyzer?
-
-__all__ += ['validate_ART']
-
-
-class validate_ART(ss.Intervention):
-    """
-
-    """
-
-    def __init__(self, disease, uids, infect_uids_t, stop_ART=False, restart_ART=False, *args, **kwargs):
-        """
-
-        """
-        super().__init__(**kwargs)
-
-        self.disease = disease
-        self.uids = uids
-        self.infect_uids_t = infect_uids_t
-        self.stop_ART = stop_ART
-        self.restart_ART = restart_ART
-
-        return
-
-    def initialize(self, sim):
-        super().initialize(sim)
-        self.results = ss.ndict()
-        npts = self.sim.npts
-        for index, uid in enumerate(self.uids):
-            self.results += ss.Result(self.name, 'status_' + str(uid), npts, dtype=np.dtype(('U', 10)))
-            self.results += ss.Result(self.name, 'ART_status_' + str(uid), npts, dtype=np.dtype(('U', 10)))
-            self.results += ss.Result(self.name, 'cd4_count_' + str(uid), npts, dtype=float, scale=False)
-            self.results += ss.Result(self.name, 'transmission_' + str(uid), npts, dtype=float, scale=False)
-
-        return
-
-    def save_viral_histories(self, sim):
-        """
-        Save results to csv if called
-        """
-
-        history_df = pd.DataFrame.from_dict(self.results)
-        history_df.to_csv("viral_histories.csv")
-        return
-
-    def apply(self, sim):
-        """
-        Use this function to infect agents at the time step provided
-        Save CD4 counts and viral load at each time step
-        """
-        for index, uid in enumerate(self.uids):
-            # Check if it's time to infect this agent:
-            if sim.ti == self.infect_uids_t[index] and uid in sim.people.alive.uids and sim.diseases[self.disease].infected[ss.uids(uid)] == False:
-                sim.diseases[self.disease].infected[ss.uids(uid)] = True
-                sim.diseases[self.disease].ti_infected[ss.uids(uid)] = sim.ti
-                sim.diseases[self.disease].ti_since_untreated[ss.uids(uid)] = sim.ti
-                sim.diseases[self.disease].susceptible[ss.uids(uid)] = False
-                #sim.diseases[self.disease].syphilis_inf[ss.uids(uid)] = True
-                #sim.diseases[self.disease].ti_syphilis_inf[ss.uids(uid)] = sim.ti
-
-                # if self.stop_ART:
-                #    sim.diseases[self.disease].ti_stop_art[uid] = sim.ti + sim.diseases[self.disease].pars.avg_duration_stop_ART
-
-            if uid in sim.people.alive.uids:
-                # Check if it's time to restart ART treatment:
-                # if sim.diseases[self.disease].on_art[uid] and self.stop_ART and self.restart_ART and sim.ti == sim.diseases[self.disease].ti_stop_art[uid]:
-                #    sim.diseases[self.disease].schedule_ART_treatment(np.array([uid]), sim.ti + sim.diseases[self.disease].pars.avg_duration_restart_ART)
-
-                if sim.diseases[self.disease].on_art[ss.uids(uid)]:
-                    ART_status = 'on_ART'
-                else:
-                    ART_status = 'not_on_ART'
-                self.results['cd4_count_' + str(uid)][0] = sim.diseases[self.disease].cd4_start[ss.uids(uid)]
-                self.results['cd4_count_' + str(uid)][sim.ti] = sim.diseases[self.disease].cd4[ss.uids(uid)]
-                self.results['ART_status_' + str(uid)][sim.ti] = ART_status
-                self.results['status_' + str(uid)][sim.ti] = 'alive'
-                self.results['transmission_' + str(uid)][sim.ti] = sim.diseases[self.disease].rel_trans[ss.uids(uid)] * sim.diseases[self.disease].infected[ss.uids(uid)]
-
-            else:
-                self.results['cd4_count_' + str(uid)][sim.ti] = np.nan
-                self.results['status_' + str(uid)][sim.ti] = 'dead'
-
-        return

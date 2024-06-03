@@ -1,4 +1,4 @@
-year,pop_size,hiv_prev,plhiv,new_infections,new_deaths
+year,n_alive,hiv.prevalence,hiv.n_infected,hiv.new_infections,hiv.new_deaths
 1990,10432409,0.06997425,730000,210000,25000
 1991,10681008,0.085197951,910000,220000,33000
 1992,10900511,0.1009127,1100000,220000,43000
