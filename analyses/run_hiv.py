@@ -327,18 +327,6 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, save_
     )
 
     ####################################################################################################################
-    # Treatment Data
-    ####################################################################################################################
-    ART_coverages_raw = pd.read_csv(sti.data/f'world_bank_art_coverages.csv', skiprows=4).set_index('Country Name').loc[location.capitalize()].dropna()[3:]
-    tivec = np.arange(start=1990, stop=2021 + 1 / 12, step=1 / 12)
-    ART_coverages_df = pd.DataFrame({"Years": tivec,
-                                     "Value": (np.interp(tivec,
-                                                         ART_coverages_raw.index.astype(int).tolist(),
-                                                         (ART_coverages_raw.values / 100).tolist()))})
-
-    hiv.pars['ART_coverages_df'] = ART_coverages_df
-
-    ####################################################################################################################
     # Make demographic modules
     ####################################################################################################################
     fertility_rates = {'fertility_rate': pd.read_csv(sti.data/f'{location}_asfr.csv')}
@@ -355,9 +343,14 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, save_
     maternal = ss.MaternalNet()
 
     ####################################################################################################################
-    # Products and testing
+    # Testing and treatment
     ####################################################################################################################
+    n_art = pd.read_csv(sti.data/'zimbabwe_art.csv').set_index('year')
     fsw_testing, other_testing, low_cd4_testing = get_testing_products()
+    art = sti.ART(
+        coverage_data=n_art,
+        dur_on_art=ss.lognorm_ex(7, 3),  # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
+    )
 
     ####################################################################################################################
     # Sim
@@ -374,10 +367,8 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, save_
             fsw_testing,
             other_testing,
             low_cd4_testing,
-            ART(ART_coverages_df=ART_coverages_df,
-               dur_on_art=ss.lognorm_ex(7, 3),  # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
-               art_efficacy=0.96),
-            ],
+            art,
+        ],
         demographics=[pregnancy, death])
 
     return sim_kwargs

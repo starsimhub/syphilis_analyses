@@ -67,8 +67,6 @@ class HIVTest(ss.Intervention):
         elif sc.checktype(self.test_prob_data, 'arraylike'):
             year_ind = sc.findnearest(self.years, sim.year)
             test_prob = self.test_prob_data[year_ind]
-            test_prob = test_prob * self.pars.rel_test * sim.dt
-            test_prob = np.clip(test_prob, a_min=0, a_max=1)
         else:
             errormsg = 'Format of test_prob_data must be float or array.'
             raise ValueError(errormsg)
@@ -111,22 +109,24 @@ class ART(ss.Intervention):
     ART-treatment intervention by Robyn Stuart, Daniel Klein and Cliff Kerr, edited by Alina Muellenmeister
     """
 
-    def __init__(self, pars=None, **kwargs):
+    def __init__(self, pars=None, coverage_data=None, **kwargs):
         super().__init__()
         self.default_pars(
-            ART_coverages_df=None,
-            ARV_coverages_df=None,
             dur_on_art=ss.normal(loc=18, scale=5),
             dur_post_art=ss.normal(loc=self.dur_post_art_mean, scale=self.dur_post_art_scale),
             dur_post_art_scale_factor=0.1,
             art_cd4_pars=dict(cd4_max=1000, cd4_healthy=500),
             init_prob=ss.bernoulli(p=0.9),  # Probability that a newly diagnosed person will initiate treatment
-            )
+            future_coverage={'year': 2022, 'prop':0.9},
+        )
         self.update_pars(pars, **kwargs)
+        self.coverage_data = coverage_data
+        self.coverage = None  # Set below
         return
 
     def initialize(self, sim):
         super().initialize(sim)
+        self.coverage = sc.smoothinterp(sim.yearvec, self.coverage_data.index.values, self.coverage_data.n_art.values)
         self.initialized = True
         return
 
@@ -152,12 +152,14 @@ class ART(ss.Intervention):
         Apply the ART intervention at each time step. Put agents on and off ART and adjust based on data.
         """
         hiv = sim.diseases.hiv
+        inf_uids = hiv.infected.uids
 
-        # Get the current ART coverage. If year is not available, assume 90%
-        if len(self.pars.ART_coverages_df[self.pars.ART_coverages_df['Years'] == sim.year]['Value'].tolist()) > 0:
-            ART_coverage_this_year = self.pars.ART_coverages_df[self.pars.ART_coverages_df['Years'] == sim.year]['Value'].tolist()[0]
+        # Figure out how many people should be treated
+        if sim.year < self.pars.future_coverage['year']:
+            n_to_treat = int(self.coverage[sim.ti]/sim.pars.pop_scale)
         else:
-            ART_coverage_this_year = self.pars.ART_coverages_df.Value.iloc[-1]  # Assume last coverage
+            p_cov = self.pars.future_coverage['prop']
+            n_to_treat = int(p_cov*len(inf_uids))
 
         # Firstly, check who is stopping ART
         if hiv.on_art.any():
@@ -166,10 +168,6 @@ class ART(ss.Intervention):
                 self.stop_art(stopping.uids)
 
         # Next, see how many people we need to treat vs how many are already being treated
-        ART_coverage = ART_coverage_this_year
-        inf_uids = hiv.infected.uids
-        # dx_uids = hiv.diagnosed.uids
-        n_to_treat = int(ART_coverage*len(inf_uids))
         on_art = hiv.on_art
 
         # A proportion of newly diagnosed agents onto ART will be willing to initiate ART
@@ -212,9 +210,9 @@ class ART(ss.Intervention):
         hiv.ti_stop_art[uids] = ti + (dur_on_art / dt).astype(int)
 
         # ART nullifies all states and all future dates in the natural history
-        hiv.acute = False
-        hiv.latent = False
-        hiv.falling = False
+        hiv.acute[uids] = False
+        hiv.latent[uids] = False
+        hiv.falling[uids] = False
         future_latent = uids[hiv.ti_latent[uids] > sim.ti]
         hiv.ti_latent[future_latent] = np.nan
         future_falling = uids[hiv.ti_falling[uids] > sim.ti]

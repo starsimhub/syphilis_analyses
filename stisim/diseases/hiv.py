@@ -295,10 +295,12 @@ class HIV(ss.Infection):
         # serious HIV-related illnesses, which can occur throughout HIV.
         hiv_deaths = self._death_prob.filter(self.infected.uids)
         if len(hiv_deaths):
+            self.ti_dead[hiv_deaths] = ti
             self.sim.people.request_death(hiv_deaths)
         if self.pars.include_aids_deaths:
             aids_deaths = (self.ti_zero <= ti).uids
             if len(aids_deaths):
+                self.ti_dead[aids_deaths] = ti
                 self.sim.people.request_death(aids_deaths)
         return
 
