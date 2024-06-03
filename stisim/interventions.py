@@ -217,8 +217,8 @@ class ART(ss.Intervention):
         hiv.ti_latent[future_latent] = np.nan
         future_falling = uids[hiv.ti_falling[uids] > sim.ti]
         hiv.ti_falling[future_falling] = np.nan
-        future_dead = uids[hiv.ti_dead[uids] > sim.ti]  # NB, if they are scheduled to die on this time step, they will
-        hiv.ti_dead[future_dead] = np.nan
+        future_zero = uids[hiv.ti_zero[uids] > sim.ti]  # NB, if they are scheduled to die on this time step, they will
+        hiv.ti_zero[future_zero] = np.nan
 
         # Set CD4 potential for anyone new to treatment - retreated people have the same potential
         # Extract growth parameters

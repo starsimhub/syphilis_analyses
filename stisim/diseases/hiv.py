@@ -206,10 +206,10 @@ class HIV(ss.Infection):
         return self.infectious
 
     @staticmethod
-    def death_prob(module, sim=None, size=None):
+    def death_prob(module, sim=None, uids=None):
         cd4_bins = np.array([1000, 500, 350, 200, 50, 0])
-        death_prob = np.array([0.0036, 0.0036, 0.0058, 0.0088, 0.059, 0.290])  # Values smaller than the first bin edge get assigned to the last bin.
-        return death_prob[np.digitize(module.cd4[size], cd4_bins)]
+        death_prob = sim.dt*np.array([0.003, 0.003, 0.005, 0.001, 0.05, 0.200])  # Values smaller than the first bin edge get assigned to the last bin.
+        return death_prob[np.digitize(module.cd4[uids], cd4_bins)]
 
     @staticmethod
     def _interpolate(vals: list, t):
@@ -293,12 +293,13 @@ class HIV(ss.Infection):
 
         # Update deaths. We capture deaths from AIDS (i.e., when CD4 count drops to ~0) as well as deaths from
         # serious HIV-related illnesses, which can occur throughout HIV.
-        hiv_deaths = self._death_prob.filter(self.infected.uids)
+        off_art = (self.infected & ~self.on_art).uids
+        hiv_deaths = self._death_prob.filter(off_art)
         if len(hiv_deaths):
             self.ti_dead[hiv_deaths] = ti
             self.sim.people.request_death(hiv_deaths)
         if self.pars.include_aids_deaths:
-            aids_deaths = (self.ti_zero <= ti).uids
+            aids_deaths = (self.ti_zero == ti).uids
             if len(aids_deaths):
                 self.ti_dead[aids_deaths] = ti
                 self.sim.people.request_death(aids_deaths)

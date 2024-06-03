@@ -349,7 +349,7 @@ def make_hiv_sim(location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, save_
     fsw_testing, other_testing, low_cd4_testing = get_testing_products()
     art = sti.ART(
         coverage_data=n_art,
-        dur_on_art=ss.lognorm_ex(7, 3),  # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
+        dur_on_art=ss.lognorm_ex(15, 3),  # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
     )
 
     ####################################################################################################################
@@ -386,6 +386,54 @@ def run_hiv(location='zimbabwe', total_pop=100e6, dt=1.0, n_agents=500):
     return sim, df
 
 
+def run_calibration(do_plot=True):
+
+    # Define the calibration parameters
+    calib_pars = dict(
+        diseases = dict(
+            hiv = dict(
+                beta_m2f = [0.05, 0.01, 0.10],
+                beta_f2m = [0.025, 0.005, 0.05],
+            ),
+        ),
+        networks = dict(
+            structuredsexual = dict(
+                prop_f1 = [0.15, 0.1, 0.45],
+                prop_m1 = [0.21, 0.15, 0.5],
+                f1_conc = [0.01, 0.005, 0.1],
+                m1_conc = [0.01, 0.005, 0.1],
+                p_pair_form = [0.5, 0.4, 0.9],
+            ),
+        ),
+    )
+
+    # Make the sim
+    sim_kwargs = make_hiv_sim(location='zimbabwe', total_pop=9980999, dt=1/12, n_agents=10e3)
+    sim = ss.Sim(**sim_kwargs)
+
+    # Weight the data
+    weights = {
+        'n_alive': 1,
+        'hiv.prevalence': 1,
+        'hiv.n_infected': 1,
+        'hiv.new_infections': 1,
+        'hiv.new_deaths': 1,
+        }
+
+    # Make the calibration
+    calib = sti.Calibration(
+        calib_pars = calib_pars,
+        sim = sim,
+        datafile=sti.data/'zimbabwe_calib.csv',
+        weights=weights,
+        total_trials=2, n_workers=1, die=True
+    )
+
+    calib.calibrate()
+
+    return sim, calib
+
+
 if __name__ == '__main__':
     location = 'zimbabwe'
     total_pop = dict(
@@ -393,8 +441,11 @@ if __name__ == '__main__':
         zimbabwe=9980999,
     )[location]
 
-    sim, output = run_hiv(location=location, total_pop=total_pop, dt=1 / 12, n_agents=int(1e4))
+    # sim, output = run_hiv(location=location, total_pop=total_pop, dt=1 / 12, n_agents=int(1e4))
     # output.to_csv("HIV_output.csv")
+    sim, calib = run_calibration()
+
+
 
     plot_hiv(output)
 
