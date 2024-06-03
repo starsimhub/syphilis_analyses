@@ -16,8 +16,6 @@ import starsim as ss
 import pandas as pd
 import matplotlib.pyplot as plt
 import sciris as sc
-from io import StringIO
-import seaborn as sns
 import stisim as sti
 from matplotlib.ticker import FuncFormatter
 import matplotlib.patches as mpatches
@@ -26,7 +24,7 @@ from matplotlib.lines import Line2D
 
 # Run settings
 debug = False
-n_trials    = [1000, 2][debug]  # How many trials to run for calibration
+n_trials    = [1000, 4][debug]  # How many trials to run for calibration
 n_workers   = [40, 2][debug]    # How many cores to use
 storage     = ["mysql://hpvsim_user@localhost/hpvsim_db", None][debug]  # Storage for calibrations
 
@@ -369,11 +367,11 @@ def run_calibration(n_trials=None, n_workers=None, do_save=True):
         sim = sim,
         datafile=sti.data/'zimbabwe_calib.csv',
         weights=weights,
-        total_trials=2, n_workers=1, die=True
+        total_trials=n_trials, n_workers=n_workers, die=True
     )
 
     calib.calibrate()
-    filename = f'zim_calib{filestem}'
+    filename = f'zim_calib'
     sc.saveobj(f'results/{filename}.obj', calib)
     print(f'Best pars are {calib.best_pars}')
 
