@@ -27,6 +27,7 @@ ss.options['multirng'] = False
 debug_mode = False
 result_dir = Path("results/Calibration")
 to_run = []
+sd_hiv_beta = 0.0025
 
 
 def get_betas(mean_beta, std_beta, nruns=None):
@@ -39,7 +40,7 @@ def run_scenario(kwargs, filter=False):
     nruns = kwargs['nruns']
     del kwargs['nruns']
 
-    seeds, hiv_betas = get_betas(kwargs['ss_hiv_beta'], 1, nruns)
+    seeds, hiv_betas = get_betas(kwargs['ss_hiv_beta'], sd_hiv_beta, nruns)
     description_baseline = kwargs['save_as']
 
     if not hasattr(thread_local, "pbar"):
@@ -89,12 +90,14 @@ def run_scenario(kwargs, filter=False):
     try:
         time.sleep(2)
         result.forget()
-    except SocketError as err:
-        if err.errno != errno.ECONNRESET:
-            # The error is NOT a ConnectionResetError
-            raise
+
+    except:
+        # if err.errno != errno.ECONNRESET:
+        # The error is NOT a ConnectionResetError
+        #    raise
         time.sleep(10)
-        result.forget() # Try again?
+        print('Connection Error. Trying again.')
+        result.forget()  # Try again?
 
     return True
 
@@ -116,7 +119,7 @@ if __name__ == '__main__':
     risk_groups_m_probs = [np.array([0.78, 0.21, 0.01])]
     p_pair_forms = [0.5]
     concs = [{'f': [0.0001, 0.01, 0.1],
-             'm': [0.01, 0.2, 0.5]}]
+              'm': [0.01, 0.2, 0.5]}]
     idx = 0
     for ss_hiv_beta in ss_hiv_betas:
         for maternal_hiv_beta in maternal_hiv_betas:
@@ -151,7 +154,7 @@ if __name__ == '__main__':
 
                                     to_run.append(kwargs)
                                     idx += 1
-    to_run = to_run[0:1]
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--nruns", default=10, type=int, help="Number of seeds to run per scenario")
     parser.add_argument("--celery", default=False, type=bool, help="If True, use Celery for parallelization")
@@ -171,7 +174,7 @@ if __name__ == '__main__':
             pbar.refresh()
             pbar.unpause()
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
 
                 for i, run_args in enumerate(to_run):
                     run_args['nruns'] = args.nruns
