@@ -25,8 +25,8 @@ from matplotlib.lines import Line2D
 
 
 # Run settings
-debug = True
-n_trials    = [3000, 2][debug]  # How many trials to run for calibration
+debug = False
+n_trials    = [1000, 2][debug]  # How many trials to run for calibration
 n_workers   = [40, 1][debug]    # How many cores to use
 storage     = ["mysql://hpvsim_user@localhost/hpvsim_db", None][debug]  # Storage for calibrations
 
