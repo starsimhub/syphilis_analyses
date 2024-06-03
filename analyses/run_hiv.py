@@ -387,12 +387,9 @@ if __name__ == '__main__':
 
     # sim, output = run_hiv(location=location, total_pop=total_pop, dt=1 / 12, n_agents=int(1e4))
     # output.to_csv("HIV_output.csv")
+    # plot_hiv(output)
+    # sc.saveobj(f'sim_{location}.obj', sim)
 
     # Calibration
     sim, calib = run_calibration(n_trials=n_trials, n_workers=n_workers)
 
-
-
-    plot_hiv(output)
-
-    sc.saveobj(f'sim_{location}.obj', sim)
