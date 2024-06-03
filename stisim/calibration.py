@@ -328,17 +328,22 @@ class Calibration(sc.prettyobj):
         Remove the database file if keep_db is false and the path exists.
         '''
         try:
-            op = import_optuna()
-            op.delete_study(study_name=self.run_args.name, storage=self.run_args.storage)
-            if self.verbose:
-                print(f'Deleted study {self.run_args.name} in {self.run_args.storage}')
+            if 'sqlite' in self.run_args.storage:
+                # Delete the file from disk
+                if os.path.exists(self.run_args.db_name):
+                    os.remove(self.run_args.db_name)
+                if self.verbose:
+                    print(f'Removed existing calibration file {self.run_args.db_name}')
+            else:
+                # Delete the study from the database e.g., mysql
+                op = import_optuna()
+                study = op.load_study(study_name=self.run_args.name, storage=self.run_args.storage)
+                op.delete_study(study_name=self.run_args.name, storage=self.run_args.storage)
+                if self.verbose:
+                    print(f'Deleted study {self.run_args.name} in {self.run_args.storage}')
         except Exception as E:
             print('Could not delete study, skipping...')
             print(str(E))
-        if os.path.exists(self.run_args.db_name):
-            os.remove(self.run_args.db_name)
-            if self.verbose:
-                print(f'Removed existing calibration {self.run_args.db_name}')
         return
 
     def make_study(self):
