@@ -231,11 +231,17 @@ def run_sim(seed, location, total_pop, dt, n_agents, disease='hiv', return_sim=F
     #summary = {} # sc.dcp(kwargs)
     summary["seed"] = seed
 
-    final_day_quantities = ["cum_diagnoses",
-                            "cum_infections",
-                            "cum_deaths"]
+    final_day_quantities = ["n_alive", "hiv.n_infected",
+                            "hiv.n_diagnosed",
+                            "hiv.prevalence",
+                            "hiv.cum_diagnoses",
+                            "hiv.new_diagnoses",
+                            "hiv.cum_infections",
+                            "hiv.new_infections",
+                            "hiv.cum_deaths",
+                            "hiv.new_deaths"]
     for quantity in final_day_quantities:
-        summary[quantity] = df.iloc[-1][disease.lower() + "." + quantity]
+        summary[quantity] = df.iloc[-1][quantity]
 
     if return_sim:
         return df, summary, sim
