@@ -7,6 +7,7 @@ setup(
     url="https://github.com/starsimhub/syphilis_analyses",
     packages=find_packages(),
     install_requires=[
-        'starsim'
+        'starsim',
+        'optuna',
     ],
 )
