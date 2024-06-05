@@ -6,7 +6,7 @@ Overview:
     - 0 = marry and remain married to a single partner throughout their lifetime
     - 1 = marry and then divorce or who have concurrent partner(s) during their marriage
     - 2 = never marry
-- In addition, a proportion of each of the groups above engages in sex work
+- In addition, a proportion of each of the groups above engages in sex work.
 """
 
 import starsim as ss
@@ -53,8 +53,12 @@ class StructuredSexual(ss.SexualNetwork):
             debut_m=ss.lognorm_ex(21, 3),
 
             # Risk groups
-            risk_groups_f=ss.choice(a=3, p=np.array([0.85, 0.14, 0.01])),
-            risk_groups_m=ss.choice(a=3, p=np.array([0.78, 0.21, 0.01])),
+            prop_f1 = 0.15,
+            prop_m1 = 0.2,
+            prop_f2 = 0.01,
+            prop_m2 = 0.02,
+            risk_groups_f = ss.choice(a=3),
+            risk_groups_m = ss.choice(a=3),
 
             # Age difference preferences
             age_diff_pars=dict(
@@ -187,6 +191,10 @@ class StructuredSexual(ss.SexualNetwork):
     def set_risk_groups(self, upper_age=None):
         """ Assign each person to a risk group """
         f_uids, m_uids = self._get_uids(upper_age=upper_age)
+        risk_groups_f = np.array([1-self.pars.prop_f1-self.pars.prop_f2, self.pars.prop_f1, self.pars.prop_f2])
+        self.pars.risk_groups_f.set(p=risk_groups_f)
+        risk_groups_m = np.array([1-self.pars.prop_m1-self.pars.prop_m2, self.pars.prop_m1, self.pars.prop_m2])
+        self.pars.risk_groups_m.set(p=risk_groups_m)
         self.risk_group[f_uids] = self.pars.risk_groups_f.rvs(f_uids)
         self.risk_group[m_uids] = self.pars.risk_groups_m.rvs(m_uids)
         return
@@ -344,21 +352,21 @@ class StructuredSexual(ss.SexualNetwork):
         people = self.sim.people
         dt = self.sim.dt
 
-        self.contacts.dur = self.contacts.dur - dt
+        self.edges.dur = self.edges.dur - dt
 
         # Non-alive agents are removed
-        alive_bools = people.alive[ss.uids(self.contacts.p1)] & people.alive[ss.uids(self.contacts.p2)]
-        active = (self.contacts.dur > 0) & alive_bools
+        alive_bools = people.alive[ss.uids(self.edges.p1)] & people.alive[ss.uids(self.edges.p2)]
+        active = (self.edges.dur > 0) & alive_bools
 
         # For gen pop contacts that are due to expire, decrement the partner count
-        inactive_gp = ~active & (~self.contacts.sw)
-        self.partners[ss.uids(self.contacts.p1[inactive_gp])] -= 1
-        self.partners[ss.uids(self.contacts.p2[inactive_gp])] -= 1
+        inactive_gp = ~active & (~self.edges.sw)
+        self.partners[ss.uids(self.edges.p1[inactive_gp])] -= 1
+        self.partners[ss.uids(self.edges.p2[inactive_gp])] -= 1
 
         # For all contacts that are due to expire, remove them from the contacts list
         if len(active) > 0:
             for k in self.meta_keys():
-                self.contacts[k] = (self.contacts[k][active])
+                self.edges[k] = (self.edges[k][active])
 
         return
 
