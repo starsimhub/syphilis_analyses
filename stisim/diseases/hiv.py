@@ -23,7 +23,7 @@ class HIV(ss.Infection):
 
         # Parameters
         self.default_pars(
-            # Natural history
+            # Natural history without treatment
             cd4_start=ss.normal(loc=800, scale=50),
             cd4_latent=ss.normal(loc=500, scale=50),
             dur_acute=ss.lognorm_ex(3/12, 1/12),    # Duration of acute HIV infection
@@ -122,6 +122,34 @@ class HIV(ss.Infection):
             self.pars.beta['structuredsexual'][1] *= self.pars.beta_f2m
         if self.pars.beta_m2c is not None:
             self.pars.beta['maternal'][1] *= self.pars.beta_m2c
+
+        return
+
+
+    def init_results(self):
+        """
+        Initialize results
+        """
+        super().init_results()
+        npts = self.sim.npts
+        self.results += ss.Result(self.name, 'new_deaths', npts, dtype=int, scale=True)
+        self.results += ss.Result(self.name, 'cum_deaths', npts, dtype=int, scale=True)
+        self.results += ss.Result(self.name, 'new_diagnoses', npts, dtype=int, scale=True)
+        self.results += ss.Result(self.name, 'cum_diagnoses', npts, dtype=int, scale=True)
+        self.results += ss.Result(self.name, 'new_agents_on_art', npts, dtype=float, scale=True)
+        self.results += ss.Result(self.name, 'cum_agents_on_art', npts, dtype=float, scale=True)
+        self.results += ss.Result(self.name, 'prevalence_sw', npts, dtype=float)
+        self.results += ss.Result(self.name, 'prevalence_client', npts, dtype=float)
+        self.results += ss.Result(self.name, 'n_on_art_pregnant', npts, dtype=float, scale=True)
+        self.results += ss.Result(self.name, 'p_on_art', npts, dtype=float, scale=False)
+
+        # Add FSW and clients to results:
+        for risk_group in range(self.sim.networks.structuredsexual.pars.n_risk_groups):
+            for sex in ['female', 'male']:
+                self.results += ss.Result(self.name, 'prevalence_risk_group_' + str(risk_group) + '_' + sex, npts,
+                                          dtype=float)
+                self.results += ss.Result(self.name, 'new_infections_risk_group_' + str(risk_group) + '_' + sex,
+                                          npts, dtype=float)
 
         return
 
@@ -344,32 +372,6 @@ class HIV(ss.Infection):
 
         return
 
-    def init_results(self):
-        """
-        Initialize results
-        """
-        super().init_results()
-        npts = self.sim.npts
-        self.results += ss.Result(self.name, 'new_deaths', npts, dtype=int, scale=True)
-        self.results += ss.Result(self.name, 'cum_deaths', npts, dtype=int, scale=True)
-        self.results += ss.Result(self.name, 'new_diagnoses', npts, dtype=int, scale=True)
-        self.results += ss.Result(self.name, 'cum_diagnoses', npts, dtype=int, scale=True)
-        self.results += ss.Result(self.name, 'new_agents_on_art', npts, dtype=float, scale=True)
-        self.results += ss.Result(self.name, 'cum_agents_on_art', npts, dtype=float, scale=True)
-        self.results += ss.Result(self.name, 'prevalence_sw', npts, dtype=float)
-        self.results += ss.Result(self.name, 'prevalence_client', npts, dtype=float)
-        self.results += ss.Result(self.name, 'n_on_art_pregnant', npts, dtype=float, scale=True)
-
-        # Add FSW and clients to results:
-        for risk_group in range(self.sim.networks.structuredsexual.pars.n_risk_groups):
-            for sex in ['female', 'male']:
-                self.results += ss.Result(self.name, 'prevalence_risk_group_' + str(risk_group) + '_' + sex, npts,
-                                          dtype=float)
-                self.results += ss.Result(self.name, 'new_infections_risk_group_' + str(risk_group) + '_' + sex,
-                                          npts, dtype=float)
-
-        return
-
     def update_results(self):
         """
         Update results at each time step
@@ -383,6 +385,7 @@ class HIV(ss.Infection):
         self.results['new_agents_on_art'][ti] = np.count_nonzero(self.ti_art == ti)
         self.results['cum_agents_on_art'][ti] = np.sum(self.results['new_agents_on_art'][:ti + 1])
         self.results['n_on_art_pregnant'][ti] = np.count_nonzero(self.on_art & self.sim.people.pregnancy.pregnant)
+        self.results['p_on_art'][ti] = self.results['n_on_art'][ti]/self.results['n_infected'][ti]
 
         # Subset by FSW and client:
         fsw_infected = self.infected[self.sim.networks.structuredsexual.fsw]
