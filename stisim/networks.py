@@ -96,9 +96,6 @@ class StructuredSexual(ss.SexualNetwork):
             # Acts
             acts=ss.lognorm_ex(90, 30),  # Annual acts
 
-            # Barrier protection
-            condoms=ss.bernoulli(p=0.2),  # Placeholder, varies by age/risk group/time
-
             # Sex work parameters
             fsw_shares=ss.bernoulli(p=0.05),
             client_shares=ss.bernoulli(p=0.12),
@@ -114,10 +111,10 @@ class StructuredSexual(ss.SexualNetwork):
 
         self.update_pars(pars=pars, **kwargs)
 
-        # Set initial prevalence
-        self.condom_data = condom_data
+        # Set condom use
+        self.condom_data = None
         if condom_data is not None:
-            self.pars.condoms = ss.bernoulli(self.make_condom_fn)
+            self.condom_data = self.process_condom_data(condom_data)
 
         # Add states
         self.participant = ss.BoolArr('participant', default=True)
@@ -131,9 +128,16 @@ class StructuredSexual(ss.SexualNetwork):
         return
 
     @staticmethod
-    def make_condom_fn(module, sim, uids):
-
-        return
+    def process_condom_data(condom_data):
+        df = condom_data.melt(id_vars=['partnership'])
+        dd = dict()
+        for pcombo in df.partnership.unique():
+            key = tuple(map(int, pcombo[1:-1].split(',')))
+            thisdf = df.loc[df.partnership == pcombo]
+            dd[key] = dict()
+            dd[key]['year'] = thisdf.variable.values.astype(int)
+            dd[key]['val'] = thisdf.value.values
+        return dd
 
     @staticmethod
     def get_age_risk_pars(module, sim, uids, par):
@@ -178,6 +182,13 @@ class StructuredSexual(ss.SexualNetwork):
     def casual_scale(module, sim, uids, par='casual_dur_pars'):
         _, scale = module.get_age_risk_pars(module, sim, uids, par)
         return scale
+
+    def init_pre(self, sim):
+        super().init_pre(sim)
+        if self.condom_data is not None:
+            for rgtuple, valdict in self.condom_data.items():
+                self.condom_data[rgtuple]['simvals'] = sc.smoothinterp(sim.yearvec, valdict['year'], valdict['val'])
+        return
 
     def init_post(self):
         super().init_post(add_pairs=False)
@@ -295,12 +306,19 @@ class StructuredSexual(ss.SexualNetwork):
             return
 
         # Initialize beta, acts, duration
-        beta = pd.Series(1., index=p2)
+        condoms = pd.Series(1., index=p2)
         dur = pd.Series(dt, index=p2)  # Default duration is dt, replaced for stable matches
         acts = (self.pars.acts.rvs(p2) * dt).astype(int)  # Number of acts does not depend on commitment/risk group
         sw = np.full_like(p1, False, dtype=bool)
         age_p1 = ppl.age[p1]
         age_p2 = ppl.age[p2]
+
+        # First figure out condom use
+        if self.condom_data is not None:
+            for rgm in range(self.pars.n_risk_groups):
+                for rgf in range(self.pars.n_risk_groups):
+                    risk_pairing = (self.risk_group[p1]==rgm) & (self.risk_group[p2]==rgf)
+                    condoms[risk_pairing] = self.condom_data[(rgm, rgf)]['simvals'][self.sim.ti]
 
         # If both partners are in the same risk group, determine the probability they'll commit
         for rg in range(self.pars.n_risk_groups):
@@ -321,7 +339,6 @@ class StructuredSexual(ss.SexualNetwork):
                 if stable_bools.any():
                     stable_p2 = matched_p2[stable_bools]
                     dur[stable_p2] = self.pars.dur_stable.rvs(stable_p2)
-                    beta[stable_p2] = self.pars.condoms.rvs(stable_p2)
 
                 if casual_bools.any():
                     casual_p2 = matched_p2[casual_bools]
@@ -334,7 +351,7 @@ class StructuredSexual(ss.SexualNetwork):
                 casual_mismatch_p2 = mismatched_p2[casual_mismatch_bools]
                 dur[casual_mismatch_p2] = self.pars.dur_casual.rvs(casual_mismatch_p2)
 
-        self.append(p1=p1, p2=p2, beta=beta, dur=dur, acts=acts, sw=sw, age_p1=age_p1, age_p2=age_p2)
+        self.append(p1=p1, p2=p2, beta=1-condoms, dur=dur, acts=acts, sw=sw, age_p1=age_p1, age_p2=age_p2)
 
         # Get sex work values
         p1_sw, p2_sw, beta_sw, dur_sw, acts_sw, sw_sw, age_p1_sw, age_p2_sw = self.add_sex_work(ppl)
