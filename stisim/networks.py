@@ -54,10 +54,10 @@ class StructuredSexual(ss.SexualNetwork):
             debut_m=ss.lognorm_ex(21, 3),
 
             # Risk groups
-            prop_f1 = 0.15,
-            prop_m1 = 0.2,
-            prop_f2 = 0.01,
-            prop_m2 = 0.02,
+            prop_f1=0.15,
+            prop_m1=0.2,
+            prop_f2=0.01,
+            prop_m2=0.02,
             risk_groups_f = ss.choice(a=3),
             risk_groups_m = ss.choice(a=3),
 
