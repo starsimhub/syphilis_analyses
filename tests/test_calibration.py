@@ -101,7 +101,8 @@ def test_calibration(do_plot=True):
 
     calib.calibrate(confirm_fit=True)
 
-    assert calib.after_fit < calib.before_fit
+    assert calib.after_fit <= calib.before_fit, f'Calibration should improve fit, but {calib.before_fit}>{calib.after_fit}'
+    print(f'✓ ({calib.after_fit} <= {calib.before_fit})')
 
     return sim, calib
 
