@@ -306,7 +306,7 @@ class StructuredSexual(ss.SexualNetwork):
             return
 
         # Initialize beta, acts, duration
-        condoms = pd.Series(1., index=p2)
+        condoms = pd.Series(0., index=p2)
         dur = pd.Series(dt, index=p2)  # Default duration is dt, replaced for stable matches
         acts = (self.pars.acts.rvs(p2) * dt).astype(int)  # Number of acts does not depend on commitment/risk group
         sw = np.full_like(p1, False, dtype=bool)
