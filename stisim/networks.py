@@ -317,7 +317,7 @@ class StructuredSexual(ss.SexualNetwork):
         if self.condom_data is not None:
             for rgm in range(self.pars.n_risk_groups):
                 for rgf in range(self.pars.n_risk_groups):
-                    risk_pairing = (self.risk_group[p1]==rgm) & (self.risk_group[p2]==rgf)
+                    risk_pairing = (self.risk_group[p1] == rgm) & (self.risk_group[p2] == rgf)
                     condoms[risk_pairing] = self.condom_data[(rgm, rgf)]['simvals'][self.sim.ti]
 
         # If both partners are in the same risk group, determine the probability they'll commit

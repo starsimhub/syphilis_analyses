@@ -390,7 +390,7 @@ class HIV(ss.Infection):
         self.results['cum_agents_on_art'][ti] = np.sum(self.results['new_agents_on_art'][:ti + 1])
         if self.include_mtct:
             self.results['n_on_art_pregnant'][ti] = np.count_nonzero(self.on_art & self.sim.people.pregnancy.pregnant)
-        self.results['p_on_art'][ti] = self.results['n_on_art'][ti]/self.results['n_infected'][ti]
+        self.results['p_on_art'][ti] = sc.safedivide(self.results['n_on_art'][ti], self.results['n_infected'][ti])
 
         # Subset by FSW and client:
         fsw_infected = self.infected[self.sim.networks.structuredsexual.fsw]
