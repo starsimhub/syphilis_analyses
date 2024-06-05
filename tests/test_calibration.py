@@ -96,12 +96,12 @@ def test_calibration(do_plot=True):
         sim = sim,
         datafile='test_data/zimbabwe_calib.csv',
         weights=weights,
-        total_trials=2, n_workers=1, die=True
+        total_trials=4, n_workers=2, die=True
     )
 
     calib.calibrate(confirm_fit=True)
 
-    assert calib.after_fit <= calib.before_fit, f'Calibration should improve fit, but {calib.before_fit}>{calib.after_fit}'
+    assert calib.after_fit <= calib.before_fit, f'Calibration should improve fit, but {calib.before_fit}<{calib.after_fit}'
     print(f'✓ ({calib.after_fit} <= {calib.before_fit})')
 
     return sim, calib
