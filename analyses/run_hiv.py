@@ -48,7 +48,7 @@ def plot_hiv(sim_output):
     # Population
     #####################################################################################################################
     ax = axes[0]
-    ax.scatter(data.year, data.pop_size, color='tab:red', label='Data')
+    ax.scatter(data.year, data.n_alive, color='tab:red', label='Data')
     ax.plot(sim_output.index, sim_output['n_alive'], label='Modelled')
     ax.set_title('Population')
     ax.yaxis.set_major_formatter(FuncFormatter(lambda x, pos: f'{x * 1e-6:0.1f}'))
@@ -59,7 +59,7 @@ def plot_hiv(sim_output):
     # PLHIV: total, diagnosed, and treated
     #####################################################################################################################
     ax = axes[1]
-    ax.scatter(data.year, data.plhiv, label='PLHIV (data)', color='tab:red')
+    ax.scatter(data.year, data['hiv.n_infected'], label='PLHIV (data)', color='tab:red')
     ax.plot(sim_output.index, sim_output['hiv.n_infected'], label='PLHIV (modelled)')
     ax.plot(sim_output.index, sim_output['hiv.n_diagnosed'], label='Diagnosed PLHIV')
     ax.plot(sim_output.index, sim_output['hiv.n_on_art'], label='Treated PLHIV')
@@ -71,7 +71,7 @@ def plot_hiv(sim_output):
     # HIV Prevalence
     #####################################################################################################################
     ax = axes[2]
-    ax.scatter(data.year, data.hiv_prev*100, color='tab:red', label='Overall')
+    ax.scatter(data.year, data['hiv.prevalence']*100, color='tab:red', label='Overall')
     ax.plot(sim_output.index, sim_output['hiv.prevalence'] * 100, label='Overall')
     ax.set_title('HIV prevalence (%)')
     ax.plot(sim_output.index, sim_output['hiv.prevalence_sw'] * 100, label='FSW')
@@ -96,7 +96,7 @@ def plot_hiv(sim_output):
     # HIV Deaths
     #####################################################################################################################
     ax = axes[4]
-    ax.scatter(data.year, data.new_deaths, color='tab:red', label='Data')
+    ax.scatter(data.year, data['hiv.new_deaths'], color='tab:red', label='Data')
     sim_output['year'] = np.floor(np.round(sim_output.index, 1)).astype(int)
     ax.plot(np.unique(sim_output['year']), sim_output.groupby(by='year')['hiv.new_deaths'].sum(), color='tab:blue', label='Modelled')
     ax.set_title('Deaths')
@@ -106,7 +106,7 @@ def plot_hiv(sim_output):
     # New infections
     #####################################################################################################################
     ax = axes[5]
-    ax.scatter(data.year, data.new_infections, color='tab:red', label='Data')
+    ax.scatter(data.year, data['hiv.new_infections'], color='tab:red', label='Data')
     sim_output['year'] = np.floor(np.round(sim_output.index, 1)).astype(int)
     ax.plot(np.unique(sim_output['year']), sim_output.groupby(by='year')['hiv.new_infections'].sum(), color='tab:blue', label='Modelled')
     ax.set_title('New infections')
