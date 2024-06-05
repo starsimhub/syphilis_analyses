@@ -387,7 +387,7 @@ class HIV(ss.Infection):
         # Subset by FSW and client:
         fsw_infected = self.infected[self.sim.networks.structuredsexual.fsw]
         client_infected = self.infected[self.sim.networks.structuredsexual.client]
-        for risk_group in np.unique(self.sim.networks.structuredsexual.risk_group).astype(int):
+        for risk_group in range(self.sim.networks.structuredsexual.pars.n_risk_groups):
             for sex in ['female', 'male']:
                 risk_group_infected = self.infected[(self.sim.networks.structuredsexual.risk_group == risk_group) & (self.sim.people[sex])]
                 if len(risk_group_infected) > 0:
