@@ -6,7 +6,7 @@ Overview:
     - 0 = marry and remain married to a single partner throughout their lifetime
     - 1 = marry and then divorce or who have concurrent partner(s) during their marriage
     - 2 = never marry
-- In addition, a proportion of each of the groups above engages in sex work
+- In addition, a proportion of each of the groups above engages in sex work.
 """
 
 import starsim as ss
