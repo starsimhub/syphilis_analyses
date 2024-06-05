@@ -5,7 +5,6 @@ Define default HIV disease module and related interventions
 import numpy as np
 import sciris as sc
 import starsim as ss
-import pandas as pd
 from collections import defaultdict
 
 
@@ -42,7 +41,7 @@ class HIV(ss.Infection):
 
             # Initialization
             init_prev=ss.bernoulli(p=0.05),
-            init_diagnosed=ss.bernoulli(p=0.01),
+            init_diagnosed=ss.bernoulli(p=0),
             dist_ti_init_infected=ss.uniform(low=-10 * 12, high=0),
 
             # Care seeking
@@ -109,6 +108,9 @@ class HIV(ss.Infection):
 
         return
 
+    @property
+    def include_mtct(self): return 'pregnancy' in self.sim.demographics
+
     def init_pre(self, sim):
         """
         Initialize
@@ -140,8 +142,9 @@ class HIV(ss.Infection):
         self.results += ss.Result(self.name, 'cum_agents_on_art', npts, dtype=float, scale=True)
         self.results += ss.Result(self.name, 'prevalence_sw', npts, dtype=float)
         self.results += ss.Result(self.name, 'prevalence_client', npts, dtype=float)
-        self.results += ss.Result(self.name, 'n_on_art_pregnant', npts, dtype=float, scale=True)
         self.results += ss.Result(self.name, 'p_on_art', npts, dtype=float, scale=False)
+        if self.include_mtct:
+            self.results += ss.Result(self.name, 'n_on_art_pregnant', npts, dtype=float, scale=True)
 
         # Add FSW and clients to results:
         for risk_group in range(self.sim.networks.structuredsexual.pars.n_risk_groups):
@@ -280,9 +283,10 @@ class HIV(ss.Infection):
         # increase care-seeking for pregnant women and decrease again after postpartum.
         # This makes it much less likely that pregnant women will stop treatment
         self.init_care_seeking()
-        pregnant = self.sim.demographics.pregnancy.pregnant
-        self.care_seeking[pregnant] = self.baseline_care_seeking[pregnant] * self.pars.maternal_care_scale
-        self.care_seeking[~pregnant] = self.baseline_care_seeking[~pregnant]
+        if self.include_mtct:
+            pregnant = self.sim.demographics.pregnancy.pregnant
+            self.care_seeking[pregnant] = self.baseline_care_seeking[pregnant] * self.pars.maternal_care_scale
+            self.care_seeking[~pregnant] = self.baseline_care_seeking[~pregnant]
 
         # Adjust CD4 counts for people receiving treatment - logarithmic increase
         if self.on_art.any():
@@ -384,7 +388,8 @@ class HIV(ss.Infection):
         self.results['cum_diagnoses'][ti] = np.sum(self.results['new_diagnoses'][:ti + 1])
         self.results['new_agents_on_art'][ti] = np.count_nonzero(self.ti_art == ti)
         self.results['cum_agents_on_art'][ti] = np.sum(self.results['new_agents_on_art'][:ti + 1])
-        self.results['n_on_art_pregnant'][ti] = np.count_nonzero(self.on_art & self.sim.people.pregnancy.pregnant)
+        if self.include_mtct:
+            self.results['n_on_art_pregnant'][ti] = np.count_nonzero(self.on_art & self.sim.people.pregnancy.pregnant)
         self.results['p_on_art'][ti] = self.results['n_on_art'][ti]/self.results['n_infected'][ti]
 
         # Subset by FSW and client:
