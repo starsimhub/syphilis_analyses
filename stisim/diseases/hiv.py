@@ -253,10 +253,6 @@ class HIV(ss.Infection):
         self.care_seeking[~pregnant] = self.baseline_care_seeking[~pregnant]
 
         # Adjust CD4 counts for people receiving treatment - logarithmic increase
-
-        if (self.cd4==0).any():
-            import traceback; traceback.print_exc(); import pdb; pdb.set_trace()
-
         if self.on_art.any():
             art_uids = self.on_art.uids
             self.cd4[art_uids] = self.cd4_increase(art_uids)

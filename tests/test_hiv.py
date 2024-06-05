@@ -10,8 +10,8 @@ import sciris as sc
 class TrackValues(ss.Analyzer):
     # Track outputs for viral load and CD4 counts
     # Assumes no births; for diagnostic/debugging purposes only
-    def initialize(self, sim):
-        super().initialize(sim)
+    def init_pre(self, sim):
+        super().init_pre(sim)
         self.n = len(sim.people)
 
         self.hiv_rel_sus = np.empty((sim.npts, self.n), dtype=ss.dtypes.float)
