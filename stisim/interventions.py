@@ -168,10 +168,6 @@ class ART(ss.Intervention):
                 self.stop_art(stopping.uids)
 
         # Next, see how many people we need to treat vs how many are already being treated
-        ART_coverage = ART_coverage_this_year
-        inf_uids = hiv.infected.uids
-        dx_uids = hiv.diagnosed.uids
-        n_to_treat = int(ART_coverage*len(dx_uids))
         on_art = hiv.on_art
 
         # A proportion of newly diagnosed agents onto ART will be willing to initiate ART
@@ -311,5 +307,4 @@ class ART(ss.Intervention):
             n_to_add = target_coverage - len(on_art.uids)
             awaiting_art_uids = (hiv.diagnosed & ~hiv.on_art).uids
             self.prioritize_art(sim, n=n_to_add, awaiting_art_uids=awaiting_art_uids)
-
 

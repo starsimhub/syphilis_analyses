@@ -30,17 +30,22 @@ to_run = []
 sd_hiv_beta = 0.0025
 
 
-def get_betas(mean_beta, std_beta, nruns=None):
+def get_betas(mean_beta_m2f, mean_beta_f2m, maternal_hiv_betas, std_beta, nruns=None):
     seeds = np.arange(nruns)
-    betas = np.random.normal(mean_beta, std_beta, nruns)
-    return seeds, betas
+    betas_m2f = np.random.normal(mean_beta_m2f, std_beta, nruns)
+    betas_fm2 = np.random.normal(mean_beta_f2m, std_beta, nruns)
+    betas_maternal = np.random.normal(maternal_hiv_betas, std_beta, nruns)
+    return seeds, betas_m2f, betas_fm2, betas_maternal
 
 
 def run_scenario(kwargs, filter=False):
     nruns = kwargs['nruns']
     del kwargs['nruns']
 
-    seeds, hiv_betas = get_betas(kwargs['ss_hiv_beta'], sd_hiv_beta, nruns)
+    seeds, hiv_betas_m2f, hiv_betas_fm2, maternal_hiv_betas = get_betas(kwargs['ss_hiv_beta_m2f'],
+                                                                        kwargs['ss_hiv_beta_f2m'],
+                                                                        kwargs['maternal_hiv_beta'],
+                                                                        sd_hiv_beta, nruns)
     description_baseline = kwargs['save_as']
 
     if not hasattr(thread_local, "pbar"):
@@ -57,7 +62,9 @@ def run_scenario(kwargs, filter=False):
         return
     tasks = []
     for seed in seeds:
-        kwargs['ss_hiv_beta'] = hiv_betas[seed]
+        kwargs['ss_hiv_beta_m2f'] = hiv_betas_m2f[seed]
+        kwargs['ss_hiv_beta_f2m'] = hiv_betas_fm2[seed]
+        kwargs['maternal_hiv_beta'] = maternal_hiv_betas[seed]
         tasks.append(run_sim.s(seed, **kwargs))
 
     job = group(*tasks)
@@ -66,7 +73,16 @@ def run_scenario(kwargs, filter=False):
 
     while not ready:
         time.sleep(1)
-        n_ready = sum(int(result.ready()) for result in result.results)
+        try:
+            n_ready = sum(int(result.ready()) for result in result.results)
+        except SocketError as err:
+            if err.errno != errno.ECONNRESET:
+                # The error is NOT a ConnectionResetError
+                raise
+            time.sleep(10)
+            print('Connection Error. Trying again.')
+            n_ready = sum(int(result.ready()) for result in result.results)
+
         ready = n_ready == len(seeds)
         pbar.n = n_ready
         if pbar.n == 0:
@@ -91,10 +107,10 @@ def run_scenario(kwargs, filter=False):
         time.sleep(2)
         result.forget()
 
-    except:
-        # if err.errno != errno.ECONNRESET:
-        # The error is NOT a ConnectionResetError
-        #    raise
+    except SocketError as err:
+        if err.errno != errno.ECONNRESET:
+            # The error is NOT a ConnectionResetError
+            raise
         time.sleep(10)
         print('Connection Error. Trying again.')
         result.forget()  # Try again?
@@ -110,50 +126,82 @@ if __name__ == '__main__':
     )[location]
 
     # Load calibration csv:
-    calibration_scenarios = pd.read_csv("calibration_scenarios.csv")
-    ss_hiv_betas = [0.01, 0.02, 0.04, 0.06, 0.08, 0.1]
-    maternal_hiv_betas = [0.05, 0.1, 0.2, 0.4, 0.6, 0.8]
+    ss_hiv_betas_beta_m2f = [0.01, 0.02, 0.05, 0.1]
+    ss_hiv_betas_beta_f2m = [0.01, 0.02, 0.05, 0.1]
+    maternal_hiv_betas = [0.05, 0.1, 0.2, 0.3, 0.4]
     dur_on_ART_means = [18]
-    mean_initial_cd4s = [400, 600, 800, 1000]
-    risk_groups_f_probs = [np.array([0.85, 0.14, 0.01])]
+    mean_initial_cd4s = [800]
+    risk_groups_f_probs = [np.array([0.85, 0.14, 0.01]), np.array([0.70, 0.25, 0.05]), np.array([0.6, 0.35, 0.05])]
     risk_groups_m_probs = [np.array([0.78, 0.21, 0.01])]
-    p_pair_forms = [0.5]
+    p_pair_forms = [0.4, 0.6]
     concs = [{'f': [0.0001, 0.01, 0.1],
-              'm': [0.01, 0.2, 0.5]}]
-    idx = 0
-    for ss_hiv_beta in ss_hiv_betas:
-        for maternal_hiv_beta in maternal_hiv_betas:
-            for dur_on_ART_mean in dur_on_ART_means:
-                for mean_initial_cd4 in mean_initial_cd4s:
-                    for risk_groups_f_prob in risk_groups_f_probs:
-                        for risk_groups_m_prob in risk_groups_m_probs:
-                            for p_pair_form in p_pair_forms:
-                                for conc in concs:
-                                    init_prev = 0.15
-                                    ss_hiv_beta = ss_hiv_beta
-                                    maternal_hiv_beta = maternal_hiv_beta
-                                    mean_duration_onART = dur_on_ART_mean
-                                    mean_initial_cd4 = mean_initial_cd4
-                                    calibration_name = 'scenario_' + str(idx)
+              'm': [0.01, 0.2, 0.5]},
+             {'f': [0.0001, 0.1, 0.1],
+              'm': [0.01, 0.4, 0.5]}]
+    try:
+        scenario_csv = pd.read_csv("scenario_list.csv")
+    except:
+        scenario_csv = pd.DataFrame()
+    scenario_id = len(scenario_csv)
+    for ss_hiv_beta_m2f in ss_hiv_betas_beta_m2f:
+        for ss_hiv_beta_f2m in ss_hiv_betas_beta_m2f:
+            for maternal_hiv_beta in maternal_hiv_betas:
+                for dur_on_ART_mean in dur_on_ART_means:
+                    for mean_initial_cd4 in mean_initial_cd4s:
+                        for risk_groups_f_prob in risk_groups_f_probs:
+                            for risk_groups_m_prob in risk_groups_m_probs:
+                                for p_pair_form in p_pair_forms:
+                                    for conc in concs:
+                                        init_prev = 0.07
+                                        calibration_name = 'scenario_' + str(scenario_id)
 
-                                    kwargs = {'location': location,
-                                              'total_pop': total_pop,
-                                              'dt': 1 / 12,
-                                              'n_agents': int(1e4),
-                                              'init_prev': ss.bernoulli(p=init_prev),
-                                              'cd4_start_dist': ss.lognorm_ex(mean=mean_initial_cd4, stdev=10),
-                                              'ss_hiv_beta': ss_hiv_beta,
-                                              'risk_groups_f': ss.choice(a=3, p=risk_groups_f_prob),
-                                              'risk_groups_m': ss.choice(a=3, p=risk_groups_m_prob),
-                                              'p_pair_form': ss.bernoulli(p=p_pair_form),
-                                              'maternal_hiv_beta': maternal_hiv_beta,
-                                              'duration_on_ART': ss.lognorm_ex(mean=mean_duration_onART, stdev=5),
-                                              'conc': conc,
-                                              'return_sim': False,
-                                              'save_as': calibration_name}
+                                        kwargs = {'location': location,
+                                                  'total_pop': total_pop,
+                                                  'dt': 1 / 12,
+                                                  'n_agents': int(1e4),
+                                                  'init_prev': ss.bernoulli(p=init_prev),
+                                                  'cd4_start_dist': ss.lognorm_ex(mean=mean_initial_cd4, stdev=10),
+                                                  'ss_hiv_beta_m2f': ss_hiv_beta_m2f,
+                                                  'ss_hiv_beta_f2m': ss_hiv_beta_f2m,
+                                                  'risk_groups_f': ss.choice(a=3, p=risk_groups_f_prob),
+                                                  'risk_groups_m': ss.choice(a=3, p=risk_groups_m_prob),
+                                                  'p_pair_form': ss.bernoulli(p=p_pair_form),
+                                                  'maternal_hiv_beta': maternal_hiv_beta,
+                                                  'duration_on_ART': ss.lognorm_ex(mean=dur_on_ART_mean, stdev=5),
+                                                  'conc': conc,
+                                                  'return_sim': False,
+                                                  'save_as': calibration_name}
 
-                                    to_run.append(kwargs)
-                                    idx += 1
+                                        # Check if this scenario has been run already:
+                                        kwargs_dict = {}
+                                        kwargs_dict['ss_hiv_beta_m2f'] = kwargs['ss_hiv_beta_m2f']
+                                        kwargs_dict['ss_hiv_beta_fm2'] = kwargs['ss_hiv_beta_f2m']
+                                        kwargs_dict['maternal_hiv_beta'] = kwargs['maternal_hiv_beta']
+                                        kwargs_dict['init_prev'] = kwargs['init_prev'].pars.p
+                                        kwargs_dict['duration_on_ART'] = kwargs['duration_on_ART'].pars.mean
+                                        kwargs_dict['cd4_start_dist'] = kwargs['cd4_start_dist'].pars.mean
+                                        kwargs_dict['f0_prob'] = kwargs['risk_groups_f'].pars.p[0]
+                                        kwargs_dict['f1_prob'] = kwargs['risk_groups_f'].pars.p[1]
+                                        kwargs_dict['f2_prob'] = kwargs['risk_groups_f'].pars.p[2]
+                                        kwargs_dict['m0_prob'] = kwargs['risk_groups_m'].pars.p[0]
+                                        kwargs_dict['m1_prob'] = kwargs['risk_groups_m'].pars.p[1]
+                                        kwargs_dict['m2_prob'] = kwargs['risk_groups_m'].pars.p[2]
+                                        kwargs_dict['f0_conc'] = kwargs['conc']['f'][0]
+                                        kwargs_dict['f1_conc'] = kwargs['conc']['f'][1]
+                                        kwargs_dict['f2_conc'] = kwargs['conc']['f'][2]
+                                        kwargs_dict['m0_conc'] = kwargs['conc']['m'][0]
+                                        kwargs_dict['m1_conc'] = kwargs['conc']['m'][1]
+                                        kwargs_dict['m2_conc'] = kwargs['conc']['m'][2]
+                                        kwargs_dict['p_pair_form'] = kwargs['p_pair_form'].pars.p
+
+                                        if not (scenario_csv == np.array(kwargs_dict)).all(1).any():
+                                            scenario_csv = pd.concat([scenario_csv, pd.DataFrame([kwargs_dict])], ignore_index=True)
+                                            to_run.append(kwargs)
+                                            scenario_id += 1
+    if len(to_run) == 0:
+        print('All scenarios already run.')
+    else:
+        scenario_csv.to_csv("scenario_list.csv", index=False)
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--nruns", default=10, type=int, help="Number of seeds to run per scenario")
