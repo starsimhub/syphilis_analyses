@@ -361,7 +361,7 @@ class Calibration(sc.prettyobj):
         output = op.create_study(storage=self.run_args.storage, study_name=self.run_args.name, sampler=sampler)
         return output
 
-    def calibrate(self, calib_pars=None, verbose=True, load=True, tidyup=True, **kwargs):
+    def calibrate(self, calib_pars=None, confirm_fit=False, load=True, tidyup=True, **kwargs):
         '''
         Perform calibration.
         Args:
@@ -405,12 +405,13 @@ class Calibration(sc.prettyobj):
                     errormsg = f'Warning, could not load trial {n}: {str(E)}'
                     print(errormsg)
 
-        # # Compare the results
-        # self.initial_pars = self.trial_to_sim_pars(pardict=self.calib_pars)
-        # self.before_sim = self.run_sim(calib_pars=self.initial_pars, label='Before calibration')
-        # self.before_fit = self.compute_fit(self.before_sim)
-        # self.after_sim  = self.run_sim(calib_pars=self.trial_to_sim_pars(pardict=self.best_pars, last_one=True), label='After calibration')
-        # self.after_fit = self.compute_fit(self.after_sim)
+        # Compare the results
+        self.initial_pars = self.trial_to_sim_pars(pardict=self.calib_pars)
+        if confirm_fit:
+            self.before_sim = self.run_sim(calib_pars=self.initial_pars, label='Before calibration')
+            self.before_fit = self.compute_fit(self.before_sim)
+            self.after_sim  = self.run_sim(calib_pars=self.trial_to_sim_pars(pardict=self.best_pars, last_one=True), label='After calibration')
+            self.after_fit = self.compute_fit(self.after_sim)
         self.parse_study(study)
 
         # Tidy up
