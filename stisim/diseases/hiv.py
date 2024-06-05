@@ -53,6 +53,10 @@ class HIV(ss.Infection):
             art_cd4_growth=0.1,  # How quickly CD4 reconstitutes after starting ART - used in a logistic growth function
             art_efficacy=0.96,  # Efficacy of ART
             time_to_art_efficacy=0.5,  # Time to reach full ART efficacy (in years) - linear increase in efficacy
+            art_cd4_pars=dict(cd4_max=1000, cd4_healthy=500),
+            dur_on_art=ss.normal(loc=18, scale=5),
+            dur_post_art=ss.normal(loc=self.dur_post_art_mean, scale=self.dur_post_art_scale),
+            dur_post_art_scale_factor=0.1,
         )
 
         self.update_pars(pars, **kwargs)
@@ -105,11 +109,11 @@ class HIV(ss.Infection):
 
         return
 
-    def initialize(self, sim):
+    def init_pre(self, sim):
         """
         Initialize
         """
-        super().initialize(sim)
+        super().init_pre(sim)
 
         # Optionally scale betas
         if self.pars.beta_m2f is not None:
@@ -121,8 +125,8 @@ class HIV(ss.Infection):
 
         return
 
-    def init_vals(self):
-
+    def init_post(self):
+        """ Set states """
         # Set initial CD4
         self.init_cd4()
         self.init_care_seeking()
@@ -253,10 +257,6 @@ class HIV(ss.Infection):
         self.care_seeking[~pregnant] = self.baseline_care_seeking[~pregnant]
 
         # Adjust CD4 counts for people receiving treatment - logarithmic increase
-
-        if (self.cd4==0).any():
-            import traceback; traceback.print_exc(); import pdb; pdb.set_trace()
-
         if self.on_art.any():
             art_uids = self.on_art.uids
             self.cd4[art_uids] = self.cd4_increase(art_uids)
@@ -387,7 +387,7 @@ class HIV(ss.Infection):
         # Subset by FSW and client:
         fsw_infected = self.infected[self.sim.networks.structuredsexual.fsw]
         client_infected = self.infected[self.sim.networks.structuredsexual.client]
-        for risk_group in np.unique(self.sim.networks.structuredsexual.risk_group).astype(int):
+        for risk_group in range(self.sim.networks.structuredsexual.pars.n_risk_groups):
             for sex in ['female', 'male']:
                 risk_group_infected = self.infected[(self.sim.networks.structuredsexual.risk_group == risk_group) & (self.sim.people[sex])]
                 if len(risk_group_infected) > 0:
@@ -445,3 +445,84 @@ class HIV(ss.Infection):
 
     def set_congenital(self, target_uids, source_uids):
         return self.set_prognoses(target_uids, source_uids)
+
+    # Treatment-related changes
+    def start_art(self, uids):
+        """
+        Check who is ready to start ART treatment and put them on ART
+        """
+        ti = self.sim.ti
+        dt = self.sim.dt
+
+        self.on_art[uids] = True
+        newly_treated = uids[self.never_art[uids]]
+        self.never_art[newly_treated] = False
+        self.ti_art[uids] = ti
+        self.cd4_preart[uids] = self.cd4[uids]
+
+        # Determine when agents goes off ART
+        dur_on_art = self.pars.dur_on_art.rvs(uids)
+        self.ti_stop_art[uids] = ti + (dur_on_art / dt).astype(int)
+
+        # ART nullifies all states and all future dates in the natural history
+        self.acute[uids] = False
+        self.latent[uids] = False
+        self.falling[uids] = False
+        future_latent = uids[self.ti_latent[uids] > ti]
+        self.ti_latent[future_latent] = np.nan
+        future_falling = uids[self.ti_falling[uids] > ti]
+        self.ti_falling[future_falling] = np.nan
+        future_zero = uids[self.ti_zero[uids] > ti]  # NB, if they are scheduled to die on this time step, they will
+        self.ti_zero[future_zero] = np.nan
+
+        # Set CD4 potential for anyone new to treatment - retreated people have the same potential
+        # Extract growth parameters
+        if len(newly_treated) > 0:
+            cd4_max = self.pars.art_cd4_pars['cd4_max']
+            cd4_healthy = self.pars.art_cd4_pars['cd4_healthy']
+            cd4_preart = self.cd4_preart[newly_treated]
+
+            # Calculate potential CD4 increase - assuming that growth follows the concave part of a logistic function
+            # and that the total gain depends on the CD4 count at initiation
+            cd4_scale_factor = (cd4_max-cd4_preart)/cd4_healthy*np.log(cd4_max/cd4_preart)
+            cd4_total_gain = cd4_preart*cd4_scale_factor
+            self.cd4_potential[newly_treated] = self.cd4_preart[newly_treated] + cd4_total_gain
+
+        return
+
+    @staticmethod
+    def dur_post_art_fn(module, sim, uids):
+        hiv = sim.diseases.hiv
+        dur_mean = np.log(hiv.cd4_preart[uids])*hiv.cd4[uids]/hiv.cd4_potential[uids]
+        dur_scale = dur_mean * module.pars.dur_post_art_scale_factor
+        return dur_mean, dur_scale
+
+    @staticmethod
+    def dur_post_art_mean(module, sim, uids):
+        mean, _ = module.dur_post_art_fn(module, sim, uids)
+        return mean
+
+    @staticmethod
+    def dur_post_art_scale(module, sim, uids):
+        _, scale = module.dur_post_art_fn(module, sim, uids)
+        return scale
+
+    def stop_art(self, uids=None):
+        """
+        Check who is stopping ART treatment and put them off ART
+        """
+        ti = self.sim.ti
+        dt = self.sim.dt
+
+        # Remove agents from ART
+        if uids is None: uids = self.on_art & (self.ti_stop_art <= ti)
+        self.on_art[uids] = False
+        self.ti_stop_art[uids] = ti
+        self.cd4_postart[uids] = sc.dcp(self.cd4[uids])
+
+        # Set decline
+        dur_post_art = self.pars.dur_post_art.rvs(uids)
+        self.ti_zero[uids] = ti + (dur_post_art / dt).astype(int)
+
+        return
+

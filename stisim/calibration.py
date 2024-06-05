@@ -4,7 +4,6 @@ Define the calibration class
 
 import os
 import numpy as np
-import pylab as pl
 import pandas as pd
 import sciris as sc
 import starsim as ss
@@ -12,8 +11,9 @@ import starsim as ss
 
 __all__ = ['Calibration']
 
+
 def import_optuna():
-    ''' A helper function to import Optuna, which is an optional dependency '''
+    """ A helper function to import Optuna, which is an optional dependency """
     try:
         import optuna as op # Import here since it's slow
     except ModuleNotFoundError as E: # pragma: no cover
@@ -23,7 +23,7 @@ def import_optuna():
 
 
 def compute_gof(actual, predicted, normalize=True, use_frac=False, use_squared=False, as_scalar='none', eps=1e-9, skestimator=None, estimator=None, **kwargs):
-    '''
+    """
     Calculate the goodness of fit. By default use normalized absolute error, but
     highly customizable. For example, mean squared error is equivalent to
     setting normalize=False, use_squared=True, as_scalar='mean'.
@@ -53,7 +53,7 @@ def compute_gof(actual, predicted, normalize=True, use_frac=False, use_squared=F
         e3 = compute_gof(x1, x2, normalize=False, use_squared=True, as_scalar='mean') # Mean squared error
         e4 = compute_gof(x1, x2, skestimator='mean_squared_error') # Scikit-learn's MSE method
         e5 = compute_gof(x1, x2, as_scalar='median') # Normalized median absolute error -- highly robust
-    '''
+    """
 
     # Handle inputs
     actual    = np.array(sc.dcp(actual), dtype=float)
@@ -184,7 +184,7 @@ class Calibration(sc.prettyobj):
         return
 
     def run_sim(self, calib_pars=None, label=None):
-        ''' Create and run a simulation '''
+        """ Create and run a simulation """
         sim = sc.dcp(self.sim)
         if label: sim.label = label
 
@@ -199,13 +199,13 @@ class Calibration(sc.prettyobj):
             if self.die:
                 raise E
             else:
-                warnmsg = f'Encountered error running sim!\nParameters:\n{new_pars}\nTraceback:\n{sc.traceback()}'
-                output = None if return_sim else np.inf
+                print(f'Encountered error running sim!\nParameters:\n{calib_pars}\nTraceback:\n{sc.traceback()}')
+                output = None
                 return output
 
-    def translate_pars(self, sim=None, calib_pars=None):
-        """ Take pardict and modify to sim kwargs """
-        # Set the parameters in each module
+    @staticmethod
+    def translate_pars(sim=None, calib_pars=None):
+        """ Take the nested dict of calibration pars and modify the sim """
         for modtype in calib_pars.keys():
             for dkey, dpars in calib_pars[modtype].items():
                 for dparkey, dparval in dpars.items():
@@ -220,17 +220,30 @@ class Calibration(sc.prettyobj):
 
         return sim
 
-    def trial_to_sim_pars(self, pardict=None, trial=None, last_one=False):
-        '''
+    def trial_to_sim_pars(self, pardict=None, trial=None):
+        """
         Take in an optuna trial and sample from pars, after extracting them from the structure they're provided in
-        '''
-        # pars = sc.dcp(pardict)
-        pars = sc.dcp(self.calib_pars)  # TODO, dangerous??
-        pars_flatten = sc.flattendict(pars)
-        for key, val in pars_flatten.items():
+        Different use cases:
+            - pardict is self.calib_pars, i.e. {'diseases':{'hiv':{'art_efficacy':[0.96, 0.9, 0.99]}}}, need to sample
+            - pardict is self.initial_pars, i.e. {'diseases':{'hiv':{'art_efficacy':[0.96, 0.9, 0.99]}}}, pull 1st vals
+            - pardict is self.best_pars, i.e. {'diseases':{'hiv':{'art_efficacy':0.96786}}}, pull single vals
+        """
+        pars = sc.dcp(pardict)
+        flattened_inputs = sc.flattendict(pars)
+
+        structured_outputs = sc.dcp(self.calib_pars)
+        flattened_outputs = sc.flattendict(structured_outputs)
+
+        for key in flattened_outputs.keys():
             sampler_key = '_'.join(key)
+
+            if key in flattened_inputs.keys():
+                val = flattened_inputs[key]
+            else:
+                val = pars[sampler_key]
+
             if sc.isnumber(val) and trial is None:
-                sc.setnested(pars, list(key), val)
+                sc.setnested(structured_outputs, list(key), val)
 
             else:
                 low, high = val[1], val[2]
@@ -245,11 +258,11 @@ class Calibration(sc.prettyobj):
                             raise AttributeError(errormsg) from E
                     else:
                         sampler_fn = trial.suggest_float
-                    sc.setnested(pars, list(key), sampler_fn(sampler_key, low, high, step=step))
+                    sc.setnested(structured_outputs, list(key), sampler_fn(sampler_key, low, high, step=step))
                 else:
-                    sc.setnested(pars, list(key), val[0])
+                    sc.setnested(structured_outputs, list(key), val[0])
 
-        return pars
+        return structured_outputs
 
     def run_trial(self, trial, save=True):
         ''' Define the objective for Optuna '''
@@ -361,7 +374,7 @@ class Calibration(sc.prettyobj):
         output = op.create_study(storage=self.run_args.storage, study_name=self.run_args.name, sampler=sampler)
         return output
 
-    def calibrate(self, calib_pars=None, verbose=True, load=True, tidyup=True, **kwargs):
+    def calibrate(self, calib_pars=None, confirm_fit=False, load=True, tidyup=True, **kwargs):
         '''
         Perform calibration.
         Args:
@@ -405,12 +418,13 @@ class Calibration(sc.prettyobj):
                     errormsg = f'Warning, could not load trial {n}: {str(E)}'
                     print(errormsg)
 
-        # # Compare the results
-        # self.initial_pars = self.trial_to_sim_pars(pardict=self.calib_pars)
-        # self.before_sim = self.run_sim(calib_pars=self.initial_pars, label='Before calibration')
-        # self.before_fit = self.compute_fit(self.before_sim)
-        # self.after_sim  = self.run_sim(calib_pars=self.trial_to_sim_pars(pardict=self.best_pars, last_one=True), label='After calibration')
-        # self.after_fit = self.compute_fit(self.after_sim)
+        # Compare the results
+        self.initial_pars = self.trial_to_sim_pars(pardict=self.calib_pars)
+        if confirm_fit:
+            self.before_sim = self.run_sim(calib_pars=self.initial_pars, label='Before calibration')
+            self.before_fit = self.compute_fit(self.before_sim)
+            self.after_sim  = self.run_sim(calib_pars=self.trial_to_sim_pars(pardict=self.best_pars), label='After calibration')
+            self.after_fit = self.compute_fit(self.after_sim)
         self.parse_study(study)
 
         # Tidy up
