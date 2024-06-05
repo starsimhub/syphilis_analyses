@@ -45,8 +45,8 @@ class HIVTest(ss.Intervention):
         self.diagnosed = ss.BoolArr('diagnosed', default=False)
         self.ti_diagnosed = ss.FloatArr('ti_diagnosed')
 
-    def initialize(self, sim):
-        super().initialize(sim)
+    def init_pre(self, sim):
+        super().init_pre(sim)
         self.init_results()
         return
 
@@ -120,8 +120,8 @@ class ART(ss.Intervention):
         self.coverage = None  # Set below
         return
 
-    def initialize(self, sim):
-        super().initialize(sim)
+    def init_pre(self, sim):
+        super().init_pre(sim)
         self.coverage = sc.smoothinterp(sim.yearvec, self.coverage_data.index.values, self.coverage_data.n_art.values)
         self.initialized = True
         return
