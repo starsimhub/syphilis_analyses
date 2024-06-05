@@ -6,7 +6,6 @@ from .diseases      import *
 from .interventions import *
 from .networks      import *
 from .plotting      import *
-from .products      import *
 from .utils         import *
 
 # Assign the root folder
