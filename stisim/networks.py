@@ -164,8 +164,8 @@ class StructuredSexual(ss.SexualNetwork):
         _, scale = module.get_age_risk_pars(module, sim, uids, par)
         return scale
 
-    def init_vals(self):
-        super().init_vals(add_pairs=False)
+    def init_post(self):
+        super().init_post(add_pairs=False)
         self.set_network_states()
         return
 
