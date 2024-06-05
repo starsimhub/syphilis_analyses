@@ -18,7 +18,8 @@ from functools import partial
 quick_run = False
 ss.options['multirng'] = False
 
-def make_hiv_sim(seed, location='zimbabwe', total_pop=100e6, dt=1, n_agents=500, ss_hiv_beta=0.95, maternal_hiv_beta=0.5,
+def make_hiv_sim(seed, location='zimbabwe', total_pop=100e6, dt=1, n_agents=500,
+                 ss_hiv_beta_m2f=0.5, ss_hiv_beta_f2m=0.5, maternal_hiv_beta=0.5,
                  init_prev=ss.bernoulli(p=0.15),
                  duration_on_ART=ss.lognorm_ex(mean=18, stdev=5),
                  cd4_start_dist=ss.lognorm_ex(mean=800, stdev=10),
@@ -39,28 +40,14 @@ def make_hiv_sim(seed, location='zimbabwe', total_pop=100e6, dt=1, n_agents=500,
     hiv = HIV()
     hiv.pars['init_prev'] = init_prev
     hiv.pars['cd4_start_dist'] = cd4_start_dist
-    hiv.pars['beta'] = {'structuredsexual': [ss_hiv_beta, ss_hiv_beta],
-                        'maternal': [maternal_hiv_beta, 0.0]}
+    hiv.pars['beta_m2f'] = ss_hiv_beta_m2f
+    hiv.pars['beta_f2m'] = ss_hiv_beta_f2m
+    hiv.pars['beta_m2c'] = maternal_hiv_beta
 
-    hiv.pars['init_diagnosed'] = ss.bernoulli(p=0.15)  # Proportion of initially infected agents who start out as diagnosed
-    hiv.pars['primary_acute_inf_dur'] = 2.9  # in months
-    hiv.pars['transmission_sd'] = 0.0  # Standard Deviation of normal distribution for randomness in transmission.
     ####################################################################################################################
     # Add Syphilis
     ####################################################################################################################
     syphilis = sti.SyphilisPlaceholder(prevalence=None)
-
-    ####################################################################################################################
-    # Treatment Data
-    ####################################################################################################################
-    ART_coverages_raw = pd.read_csv(sti.data / f'world_bank_art_coverages.csv', skiprows=4).set_index('Country Name').loc[location.capitalize()].dropna()[3:]
-    tivec = np.arange(start=1990, stop=2021 + 1 / 12, step=1 / 12)
-    ART_coverages_df = pd.DataFrame({"Years": tivec,
-                                     "Value": (np.interp(tivec,
-                                                         ART_coverages_raw.index.astype(int).tolist(),
-                                                         (ART_coverages_raw.values / 100).tolist()))})
-
-    hiv.pars['ART_coverages_df'] = ART_coverages_df
 
     ####################################################################################################################
     # Make demographic modules
@@ -163,6 +150,15 @@ def make_hiv_sim(seed, location='zimbabwe', total_pop=100e6, dt=1, n_agents=500,
     )
 
     ####################################################################################################################
+    # Testing and treatment
+    ####################################################################################################################
+    n_art = pd.read_csv(sti.data/'zimbabwe_art.csv').set_index('year')
+    art = sti.ART(
+        coverage_data=n_art,
+        dur_on_art=ss.lognorm_ex(15, 3),  # https://bmcpublichealth.biomedcentral.com/articles/10.1186/s12889-021-10464-x
+    )
+
+    ####################################################################################################################
     # Sim
     ####################################################################################################################
     sim_kwargs = dict(
@@ -177,8 +173,7 @@ def make_hiv_sim(seed, location='zimbabwe', total_pop=100e6, dt=1, n_agents=500,
             fsw_testing,
             other_testing,
             low_cd4_testing,
-            ART(ART_coverages_df=ART_coverages_df,
-                dur_on_art=ss.normal(loc=18, scale=5))],
+            art],
         demographics=[pregnancy, death])
 
     sim = ss.Sim(**sim_kwargs)
