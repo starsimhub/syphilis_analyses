@@ -112,12 +112,8 @@ class ART(ss.Intervention):
     def __init__(self, pars=None, coverage_data=None, **kwargs):
         super().__init__()
         self.default_pars(
-            dur_on_art=ss.normal(loc=18, scale=5),
-            dur_post_art=ss.normal(loc=self.dur_post_art_mean, scale=self.dur_post_art_scale),
-            dur_post_art_scale_factor=0.1,
-            art_cd4_pars=dict(cd4_max=1000, cd4_healthy=500),
             init_prob=ss.bernoulli(p=0.9),  # Probability that a newly diagnosed person will initiate treatment
-            future_coverage={'year': 2022, 'prop':0.9},
+            future_coverage={'year': 2022, 'prop': 0.9},
         )
         self.update_pars(pars, **kwargs)
         self.coverage_data = coverage_data
@@ -129,23 +125,6 @@ class ART(ss.Intervention):
         self.coverage = sc.smoothinterp(sim.yearvec, self.coverage_data.index.values, self.coverage_data.n_art.values)
         self.initialized = True
         return
-
-    @staticmethod
-    def dur_post_art_fn(module, sim, uids):
-        hiv = sim.diseases.hiv
-        dur_mean = np.log(hiv.cd4_preart[uids])*hiv.cd4[uids]/hiv.cd4_potential[uids]
-        dur_scale = dur_mean * module.pars.dur_post_art_scale_factor
-        return dur_mean, dur_scale
-
-    @staticmethod
-    def dur_post_art_mean(module, sim, uids):
-        mean, _ = module.dur_post_art_fn(module, sim, uids)
-        return mean
-
-    @staticmethod
-    def dur_post_art_scale(module, sim, uids):
-        _, scale = module.dur_post_art_fn(module, sim, uids)
-        return scale
 
     def apply(self, sim):
         """
@@ -165,7 +144,7 @@ class ART(ss.Intervention):
         if hiv.on_art.any():
             stopping = hiv.on_art & (hiv.ti_stop_art <= sim.ti)
             if stopping.any():
-                self.stop_art(stopping.uids)
+                hiv.stop_art(stopping.uids)
 
         # Next, see how many people we need to treat vs how many are already being treated
         on_art = hiv.on_art
@@ -188,69 +167,6 @@ class ART(ss.Intervention):
             mother_uids = (hiv.on_art & sim.people.pregnancy.pregnant).uids
             infants = sim.networks.maternalnet.find_contacts(mother_uids)
             hiv.rel_sus[ss.uids(infants)] = 0
-
-        return
-
-    def start_art(self, sim, uids):
-        """
-        Check who is ready to start ART treatment and put them on ART
-        """
-        ti = sim.ti
-        dt = sim.dt
-
-        hiv = sim.diseases.hiv
-        hiv.on_art[uids] = True
-        newly_treated = uids[hiv.never_art[uids]]
-        hiv.never_art[newly_treated] = False
-        hiv.ti_art[uids] = ti
-        hiv.cd4_preart[uids] = hiv.cd4[uids]
-
-        # Determine when agents goes off ART
-        dur_on_art = self.pars.dur_on_art.rvs(uids)
-        hiv.ti_stop_art[uids] = ti + (dur_on_art / dt).astype(int)
-
-        # ART nullifies all states and all future dates in the natural history
-        hiv.acute[uids] = False
-        hiv.latent[uids] = False
-        hiv.falling[uids] = False
-        future_latent = uids[hiv.ti_latent[uids] > sim.ti]
-        hiv.ti_latent[future_latent] = np.nan
-        future_falling = uids[hiv.ti_falling[uids] > sim.ti]
-        hiv.ti_falling[future_falling] = np.nan
-        future_zero = uids[hiv.ti_zero[uids] > sim.ti]  # NB, if they are scheduled to die on this time step, they will
-        hiv.ti_zero[future_zero] = np.nan
-
-        # Set CD4 potential for anyone new to treatment - retreated people have the same potential
-        # Extract growth parameters
-        if len(newly_treated) > 0:
-            cd4_max = self.pars.art_cd4_pars['cd4_max']
-            cd4_healthy = self.pars.art_cd4_pars['cd4_healthy']
-            cd4_preart = hiv.cd4_preart[newly_treated]
-
-            # Calculate potential CD4 increase - assuming that growth follows the concave part of a logistic function
-            # and that the total gain depends on the CD4 count at initiation
-            cd4_scale_factor = (cd4_max-cd4_preart)/cd4_healthy*np.log(cd4_max/cd4_preart)
-            cd4_total_gain = cd4_preart*cd4_scale_factor
-            hiv.cd4_potential[newly_treated] = hiv.cd4_preart[newly_treated] + cd4_total_gain
-
-        return
-
-    def stop_art(self, uids=None):
-        """
-        Check who is stopping ART treatment and put them off ART
-        """
-        hiv = self.sim.diseases.hiv
-        ti = self.sim.ti
-        dt = self.sim.dt
-
-        # Remove agents from ART
-        if uids is None: uids = hiv.on_art & (hiv.ti_stop_art <= ti)
-        hiv.on_art[uids] = False
-        hiv.cd4_postart[uids] = sc.dcp(hiv.cd4[uids])
-
-        # Set decline
-        dur_post_art = self.pars.dur_post_art.rvs(uids)
-        hiv.ti_zero[uids] = ti + (dur_post_art / dt).astype(int)
 
         return
 
@@ -300,7 +216,7 @@ class ART(ss.Intervention):
             stop_uids = on_art_uids[choices]
 
             hiv.ti_stop_art[stop_uids] = sim.ti
-            self.stop_art(stop_uids)
+            hiv.stop_art(stop_uids)
 
         # Not enough agents on treatment -> add
         elif len(on_art.uids) < target_coverage:

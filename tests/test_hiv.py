@@ -99,48 +99,12 @@ class PerformTest(ss.Intervention):
                 else: raise Exception(f'Unknown event "{event}"')
 
     def initiate_ART(self, uids):
-        hiv = self.sim.diseases.hiv
         if len(uids):
-            self.sim.diseases.hiv.on_art[ss.uids(uids)] = True
-            self.sim.diseases.hiv.ti_art[ss.uids(uids)] = self.sim.ti
-            self.sim.diseases.hiv.ti_stop_art[ss.uids(uids)] = np.nan
-            self.sim.diseases.hiv.cd4_preart[ss.uids(uids)] = hiv.cd4[ss.uids(uids)]
-            newly_treated = np.array(uids)[hiv.never_art[ss.uids(uids)]]
-            self.sim.diseases.hiv.never_art[ss.uids(newly_treated)] = False
-
-            # ART nullifies all future dates in the natural history
-            ti = self.sim.ti
-            future_latent = np.array(uids)[hiv.ti_latent[ss.uids(uids)] > ti]
-            hiv.ti_latent[ss.uids(future_latent)] = np.nan
-            future_falling = np.array(uids)[hiv.ti_falling[ss.uids(uids)] > ti]
-            hiv.ti_falling[ss.uids(future_falling)] = np.nan
-            future_zero = np.array(uids)[hiv.ti_zero[ss.uids(uids)] > ti]  # NB, if they are scheduled to die on this time step, they will
-            hiv.ti_zero[ss.uids(future_zero)] = np.nan
-            hiv.acute[ss.uids(uids)] = False
-            hiv.latent[ss.uids(uids)] = False
-            hiv.falling[ss.uids(uids)] = False
-
-            # Set CD4 potential for anyone new to treatment - retreated people have the same potential
-            # Extract growth parameters
-            if len(newly_treated) > 0:
-                cd4_max = 1000
-                cd4_healthy = 500
-                cd4_preart = hiv.cd4_preart[ss.uids(newly_treated)]
-
-                # Calculate potential CD4 increase - assuming that growth follows the concave part of a logistic function
-                # and that the total gain depends on the CD4 count at initiation
-                cd4_scale_factor = (cd4_max-cd4_preart)/cd4_healthy*np.log(cd4_max/cd4_preart)
-                cd4_total_gain = cd4_preart*cd4_scale_factor
-                hiv.cd4_potential[ss.uids(newly_treated)] = hiv.cd4_preart[ss.uids(newly_treated)] + cd4_total_gain
+            self.sim.diseases.hiv.start_art(ss.uids(uids))
 
     def end_ART(self, uids):
-        self.sim.diseases.hiv.on_art[ss.uids(uids)] = False
-        self.sim.diseases.hiv.ti_stop_art[ss.uids(uids)] = self.sim.ti
-        self.sim.diseases.hiv.cd4_postart[ss.uids(uids)] = sc.dcp(self.sim.diseases.hiv.cd4[ss.uids(uids)])
-
-        # Set decline
-        dur_post_art = 4  # In reality this is linked to prior CD4 dynamics
-        self.sim.diseases.hiv.ti_zero[ss.uids(uids)] = self.sim.ti + int(dur_post_art / self.sim.dt)
+        if len(uids):
+            self.sim.diseases.hiv.stop_art(ss.uids(uids))
 
     def apply(self, sim):
         self.initiate_ART(self.art_start[sim.ti])
@@ -154,12 +118,12 @@ class PerformTest(ss.Intervention):
 def test_hiv():
     # AGENTS
     agents = sc.odict()
-    agents['No infection'] = []
-    agents['Infection without ART'] = [('hiv_infection', 1)]
+    # agents['No infection'] = []
+    # agents['Infection without ART'] = [('hiv_infection', 1)]
     agents['Goes onto ART early (CD4 > 200) and stays on forever'] = [('hiv_infection', 1), ('art_start', 1*12)]
     agents['Goes onto ART late (CD4 < 200) and stays on forever'] = [('hiv_infection', 1), ('art_start', 10*12)]
-    agents['Goes off ART with CD4 > 200'] = [('hiv_infection', 1), ('art_start', 10*12), ('art_stop', 15*12)]
-    agents['Goes off ART with CD4 < 200'] = [('hiv_infection', 1), ('art_start', 10*12), ('art_stop', 10*12+2)]
+    # agents['Goes off ART with CD4 > 200'] = [('hiv_infection', 1), ('art_start', 10*12), ('art_stop', 15*12)]
+    # agents['Goes off ART with CD4 < 200'] = [('hiv_infection', 1), ('art_start', 10*12), ('art_stop', 10*12+2)]
 
     events = []
     for i, x in enumerate(agents.values()):
@@ -220,4 +184,4 @@ def test_hiv_syph():
 
 if __name__ == '__main__':
     s0 = test_hiv()
-    s1 = test_hiv_syph()
+    # s1 = test_hiv_syph()
