@@ -42,7 +42,7 @@ class HIV(ss.Infection):
 
             # Initialization
             init_prev=ss.bernoulli(p=0.05),
-            init_diagnosed=ss.bernoulli(p=0.01),
+            init_diagnosed=ss.bernoulli(p=0),
             dist_ti_init_infected=ss.uniform(low=-10 * 12, high=0),
 
             # Care seeking
