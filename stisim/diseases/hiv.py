@@ -5,12 +5,10 @@ Define default HIV disease module and related interventions
 import numpy as np
 import sciris as sc
 import starsim as ss
-from collections import defaultdict
+import stisim as sti
 
 
 __all__ = ['HIV']
-
-import stisim as sti
 
 
 class HIV(ss.Infection):
@@ -103,9 +101,6 @@ class HIV(ss.Infection):
             ss.FloatArr('ti_diagnosed'),
         )
 
-        self._pending_ARTtreatment = defaultdict(list)
-        self.initial_hiv_maternal_beta = None
-
         return
 
     @property
@@ -126,7 +121,6 @@ class HIV(ss.Infection):
             self.pars.beta['maternal'][1] *= self.pars.beta_m2c
 
         return
-
 
     def init_results(self):
         """

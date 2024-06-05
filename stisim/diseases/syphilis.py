@@ -10,6 +10,7 @@ import stisim as sti
 
 __all__ = ['Syphilis','SyphilisPlaceholder']
 
+
 class SyphilisPlaceholder(ss.Disease):
     # A simple placeholder module to use when testing connectors
 
@@ -17,7 +18,7 @@ class SyphilisPlaceholder(ss.Disease):
         super().__init__(name='syphilis')
 
         self.default_pars(
-            prevalence=0.1, # Target prevalance. If None, no automatic infections will be applied
+            prevalence=0.1,  # Target prevalance. If None, no automatic infections will be applied
         )
         self.update_pars(pars, **kwargs)
         self.add_states(
@@ -28,8 +29,8 @@ class SyphilisPlaceholder(ss.Disease):
 
         return
 
-    def initialize(self, sim):
-        super().initialize(sim)
+    def init_pre(self, sim):
+        super().init_pre(sim)
         if not isinstance(self.pars.prevalence, sti.TimeSeries):
             ts = sti.TimeSeries(assumption=self.pars.prevalence)
         else:
