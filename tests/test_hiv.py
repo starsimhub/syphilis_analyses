@@ -118,12 +118,12 @@ class PerformTest(ss.Intervention):
 def test_hiv():
     # AGENTS
     agents = sc.odict()
-    # agents['No infection'] = []
-    # agents['Infection without ART'] = [('hiv_infection', 1)]
+    agents['No infection'] = []
+    agents['Infection without ART'] = [('hiv_infection', 1)]
     agents['Goes onto ART early (CD4 > 200) and stays on forever'] = [('hiv_infection', 1), ('art_start', 1*12)]
     agents['Goes onto ART late (CD4 < 200) and stays on forever'] = [('hiv_infection', 1), ('art_start', 10*12)]
-    # agents['Goes off ART with CD4 > 200'] = [('hiv_infection', 1), ('art_start', 10*12), ('art_stop', 15*12)]
-    # agents['Goes off ART with CD4 < 200'] = [('hiv_infection', 1), ('art_start', 10*12), ('art_stop', 10*12+2)]
+    agents['Goes off ART with CD4 > 200'] = [('hiv_infection', 1), ('art_start', 5*12), ('art_stop', 12*12)]
+    agents['Goes off ART with CD4 < 200'] = [('hiv_infection', 1), ('art_start', 9*12), ('art_stop', 12*12)]
 
     events = []
     for i, x in enumerate(agents.values()):
@@ -135,7 +135,7 @@ def test_hiv():
     pars['start'] = 2020
     pars['end'] = 2040
     pars['dt'] = 1/12
-    hiv = sti.HIV(init_prev=0, p_hiv_death=0, include_aids_deaths=False, beta={'structuredsexual': [0, 0], 'maternal': [0, 0]})
+    hiv = sti.HIV(init_prev=0, p_hiv_death=0, dur_latent=5, include_aids_deaths=False, beta={'structuredsexual': [0, 0], 'maternal': [0, 0]})
     pars['diseases'] = [hiv]
     pars['networks'] = [sti.StructuredSexual(), ss.MaternalNet()]
     pars['demographics'] = [ss.Pregnancy(fertility_rate=0), ss.Deaths(death_rate=0)]

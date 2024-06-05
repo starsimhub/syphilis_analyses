@@ -517,6 +517,7 @@ class HIV(ss.Infection):
         # Remove agents from ART
         if uids is None: uids = self.on_art & (self.ti_stop_art <= ti)
         self.on_art[uids] = False
+        self.ti_stop_art[uids] = ti
         self.cd4_postart[uids] = sc.dcp(self.cd4[uids])
 
         # Set decline
