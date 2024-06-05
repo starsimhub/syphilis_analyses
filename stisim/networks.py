@@ -13,6 +13,7 @@ import starsim as ss
 import sciris as sc
 import numpy as np
 import pandas as pd
+import stisim as sti
 
 ss_float_ = ss.dtypes.float
 
@@ -29,7 +30,7 @@ class StructuredSexual(ss.SexualNetwork):
     Structured sexual network
     """
 
-    def __init__(self, pars=None, key_dict=None, **kwargs):
+    def __init__(self, pars=None, key_dict=None, condom_data=None, **kwargs):
 
         key_dict = sc.mergedicts({
             'sw': bool,
@@ -80,6 +81,7 @@ class StructuredSexual(ss.SexualNetwork):
             p_stable0=ss.bernoulli(p=0.9),
             p_stable1=ss.bernoulli(p=0.5),
             p_stable2=ss.bernoulli(p=0),
+            p_casual_mismatch=ss.bernoulli(p=0.5),  # Probability of a casual pair forming between mismatched people
             stable_dur_pars=dict(
                 teens=[(100, 1),  (8, 2), (1e-4, 1e-4)],  # (mu,stdev) for levels 0, 1, 2
                 young=[(100, 1), (10, 3), (1e-4, 1e-4)],
@@ -93,6 +95,9 @@ class StructuredSexual(ss.SexualNetwork):
 
             # Acts
             acts=ss.lognorm_ex(90, 30),  # Annual acts
+
+            # Barrier protection
+            condoms=ss.bernoulli(p=0.2),  # Placeholder, varies by age/risk group/time
 
             # Sex work parameters
             fsw_shares=ss.bernoulli(p=0.05),
@@ -109,6 +114,11 @@ class StructuredSexual(ss.SexualNetwork):
 
         self.update_pars(pars=pars, **kwargs)
 
+        # Set initial prevalence
+        self.condom_data = condom_data
+        if condom_data is not None:
+            self.pars.condoms = ss.bernoulli(self.make_condom_fn)
+
         # Add states
         self.participant = ss.BoolArr('participant', default=True)
         self.risk_group = ss.FloatArr('risk_group')     # Which risk group an agent belongs to
@@ -117,6 +127,11 @@ class StructuredSexual(ss.SexualNetwork):
         self.concurrency = ss.FloatArr('concurrency')   # Preferred number of concurrent partners
         self.partners = ss.FloatArr('partners', default=0)  # Actual number of concurrent partners
         self.lifetime_partners = ss.FloatArr('lifetime_partners', default=0)   # Lifetime total number of partners
+
+        return
+
+    @staticmethod
+    def make_condom_fn(module, sim, uids):
 
         return
 
@@ -290,6 +305,10 @@ class StructuredSexual(ss.SexualNetwork):
         # If both partners are in the same risk group, determine the probability they'll commit
         for rg in range(self.pars.n_risk_groups):
             matched_risk = (self.risk_group[p1] == rg) & (self.risk_group[p2] == rg)
+            mismatched_risk = (
+                ((self.risk_group[p1] == rg) & (self.risk_group[p2] != rg)) |
+                ((self.risk_group[p2] == rg) & (self.risk_group[p1] != rg))
+            )
 
             # If there are any matched pairs, check if they commit
             if matched_risk.any():
@@ -302,18 +321,24 @@ class StructuredSexual(ss.SexualNetwork):
                 if stable_bools.any():
                     stable_p2 = matched_p2[stable_bools]
                     dur[stable_p2] = self.pars.dur_stable.rvs(stable_p2)
+                    beta[stable_p2] = self.pars.condoms.rvs(stable_p2)
 
                 if casual_bools.any():
                     casual_p2 = matched_p2[casual_bools]
                     dur[casual_p2] = self.pars.dur_casual.rvs(casual_p2)
 
+            # If there are any mismatched pairs, determine the probability they'll have a non-instantaneous partnership
+            if mismatched_risk.any():
+                mismatched_p2 = p2[mismatched_risk]
+                casual_mismatch_bools = self.pars.p_casual_mismatch.rvs(mismatched_p2)
+                casual_mismatch_p2 = mismatched_p2[casual_mismatch_bools]
+                dur[casual_mismatch_p2] = self.pars.dur_casual.rvs(casual_mismatch_p2)
 
         self.append(p1=p1, p2=p2, beta=beta, dur=dur, acts=acts, sw=sw, age_p1=age_p1, age_p2=age_p2)
 
         # Get sex work values
         p1_sw, p2_sw, beta_sw, dur_sw, acts_sw, sw_sw, age_p1_sw, age_p2_sw = self.add_sex_work(ppl)
         self.append(p1=p1_sw, p2=p1_sw, beta=beta_sw, dur=dur_sw, acts=acts_sw, sw=sw_sw, age_p1=age_p1_sw, age_p2=age_p2_sw)
-
 
     def add_sex_work(self, ppl):
         """ Match sex workers to clients """
