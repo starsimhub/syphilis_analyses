@@ -190,7 +190,7 @@ class ART(ss.Intervention):
             choices = np.argsort(weights)[:n]
             start_uids = awaiting_art_uids[choices]
 
-        self.start_art(sim, start_uids)
+        hiv.start_art(start_uids)
 
         return
 
