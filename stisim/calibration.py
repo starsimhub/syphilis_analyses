@@ -139,7 +139,7 @@ class Calibration(sc.prettyobj):
 
     """
 
-    def __init__(self, sim, datafile, calib_pars=None, weights=None, fit_args=None, par_samplers=None, n_trials=None, n_workers=None,
+    def __init__(self, sim, data, calib_pars=None, weights=None, fit_args=None, par_samplers=None, n_trials=None, n_workers=None,
                 total_trials=None, name=None, db_name=None, estimator=None, keep_db=None, storage=None, rand_seed=None,
                  sampler=None, label=None, die=False, verbose=True):
 
