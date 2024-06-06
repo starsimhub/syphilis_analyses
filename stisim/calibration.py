@@ -167,8 +167,11 @@ class Calibration(sc.prettyobj):
         self.verbose        = verbose
         self.calibrated     = False
 
-        # Load data
-        self.target_data = pd.read_csv(datafile)
+        # Load data -- this is expecting a dataframe with a column for 'year' and other columns for to sim results
+        if not isinstance(data, pd.DataFrame):
+            errormsg = 'Please pass data as a pandas dataframe'
+            raise ValueError(errormsg)
+        self.target_data = data
         self.target_data.set_index('year', inplace=True)
 
         # Temporarily store a filename
