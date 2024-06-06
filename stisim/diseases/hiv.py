@@ -256,7 +256,7 @@ class HIV(ss.Infection):
         """
         Set CD4 counts
         """
-        uids = ss.uids(self.cd4_start.isnan)
+        uids = ss.uids(np.isnan(self.cd4_start.raw).nonzero()[-1])
         self.cd4_start[uids] = self.pars.cd4_start.rvs(uids)
         self.cd4_nadir[uids] = sc.dcp(self.cd4_start[uids])
         return
@@ -459,6 +459,7 @@ class HIV(ss.Infection):
 
     def set_congenital(self, target_uids, source_uids):
         self.cd4_start[target_uids] = sc.dcp(self.cd4_start[source_uids])
+        self.cd4_nadir[target_uids] = sc.dcp(self.cd4_start[target_uids])
         self.set_prognoses(target_uids, source_uids)
         return
 
