@@ -243,7 +243,7 @@ class HIV(ss.Infection):
     @staticmethod
     def death_prob(module, sim=None, uids=None):
         cd4_bins = np.array([1000, 500, 350, 200, 50, 0])
-        death_prob = sim.dt*np.array([0.003, 0.003, 0.005, 0.001, 0.05, 0.200])  # Values smaller than the first bin edge get assigned to the last bin.
+        death_prob = sim.dt*np.array([0.003, 0.003, 0.005, 0.01, 0.05, 0.300])  # Values smaller than the first bin edge get assigned to the last bin.
         return death_prob[np.digitize(module.cd4[uids], cd4_bins)]
 
     @staticmethod
@@ -326,6 +326,11 @@ class HIV(ss.Infection):
 
         # Update transmission
         self.update_transmission()
+
+        # Check CD4
+        if np.isnan(self.cd4[self.infected]).any():
+            errormsg = 'Invalid entry for CD4'
+            raise ValueError(errormsg)
 
         # Update deaths. We capture deaths from AIDS (i.e., when CD4 count drops to ~0) as well as deaths from
         # serious HIV-related illnesses, which can occur throughout HIV.
@@ -437,6 +442,7 @@ class HIV(ss.Infection):
 
         self.ti_infected[uids] = ti
         self.ti_acute[uids] = ti
+        self.cd4[uids] = self.cd4_start[uids]
 
         # Set timing and CD4 count of latent infection
         dur_acute = self.pars.dur_acute.rvs(uids)
@@ -452,7 +458,9 @@ class HIV(ss.Infection):
         return
 
     def set_congenital(self, target_uids, source_uids):
-        return self.set_prognoses(target_uids, source_uids)
+        self.cd4_start[target_uids] = sc.dcp(self.cd4_start[source_uids])
+        self.set_prognoses(target_uids, source_uids)
+        return
 
     # Treatment-related changes
     def start_art(self, uids):
@@ -530,6 +538,9 @@ class HIV(ss.Infection):
 
         # Set decline
         dur_post_art = self.pars.dur_post_art.rvs(uids)
+        if np.isnan(dur_post_art).any():
+            errormsg = 'Invalid entry for post-ART duration'
+            raise ValueError(errormsg)
         self.ti_zero[uids] = ti + (dur_post_art / dt).astype(int)
 
         return
