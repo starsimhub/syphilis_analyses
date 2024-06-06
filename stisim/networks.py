@@ -129,14 +129,17 @@ class StructuredSexual(ss.SexualNetwork):
 
     @staticmethod
     def process_condom_data(condom_data):
-        df = condom_data.melt(id_vars=['partnership'])
-        dd = dict()
-        for pcombo in df.partnership.unique():
-            key = tuple(map(int, pcombo[1:-1].split(',')))
-            thisdf = df.loc[df.partnership == pcombo]
-            dd[key] = dict()
-            dd[key]['year'] = thisdf.variable.values.astype(int)
-            dd[key]['val'] = thisdf.value.values
+        if sc.isnumber(condom_data):
+            return condom_data
+        elif isinstance(condom_data, pd.DataFrame):
+            df = condom_data.melt(id_vars=['partnership'])
+            dd = dict()
+            for pcombo in df.partnership.unique():
+                key = tuple(map(int, pcombo[1:-1].split(',')))
+                thisdf = df.loc[df.partnership == pcombo]
+                dd[key] = dict()
+                dd[key]['year'] = thisdf.variable.values.astype(int)
+                dd[key]['val'] = thisdf.value.values
         return dd
 
     @staticmethod
@@ -186,8 +189,9 @@ class StructuredSexual(ss.SexualNetwork):
     def init_pre(self, sim):
         super().init_pre(sim)
         if self.condom_data is not None:
-            for rgtuple, valdict in self.condom_data.items():
-                self.condom_data[rgtuple]['simvals'] = sc.smoothinterp(sim.yearvec, valdict['year'], valdict['val'])
+            if isinstance(self.condom_data, dict):
+                for rgtuple, valdict in self.condom_data.items():
+                    self.condom_data[rgtuple]['simvals'] = sc.smoothinterp(sim.yearvec, valdict['year'], valdict['val'])
         return
 
     def init_post(self):
@@ -315,10 +319,13 @@ class StructuredSexual(ss.SexualNetwork):
 
         # First figure out condom use
         if self.condom_data is not None:
-            for rgm in range(self.pars.n_risk_groups):
-                for rgf in range(self.pars.n_risk_groups):
-                    risk_pairing = (self.risk_group[p1] == rgm) & (self.risk_group[p2] == rgf)
-                    condoms[risk_pairing] = self.condom_data[(rgm, rgf)]['simvals'][self.sim.ti]
+            if isinstance(self.condom_data, dict):
+                for rgm in range(self.pars.n_risk_groups):
+                    for rgf in range(self.pars.n_risk_groups):
+                        risk_pairing = (self.risk_group[p1] == rgm) & (self.risk_group[p2] == rgf)
+                        condoms[risk_pairing] = self.condom_data[(rgm, rgf)]['simvals'][self.sim.ti]
+            elif sc.isnumber(self.condom_data):
+                condoms[p2] = self.condom_data
 
         # If both partners are in the same risk group, determine the probability they'll commit
         for rg in range(self.pars.n_risk_groups):

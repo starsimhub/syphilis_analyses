@@ -18,7 +18,7 @@ def test_hiv_sim(n_agents=500, dt=1):
     )
     pregnancy = ss.Pregnancy(fertility_rate=10)
     death = ss.Deaths(death_rate=10)
-    sexual = sti.StructuredSexual()
+    sexual = sti.StructuredSexual(condom_data=1)
     maternal = ss.MaternalNet()
     sim = ss.Sim(
         dt=dt,

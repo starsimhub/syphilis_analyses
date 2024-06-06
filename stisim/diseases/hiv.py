@@ -13,7 +13,7 @@ __all__ = ['HIV']
 
 class HIV(ss.Infection):
 
-    def __init__(self, pars=None, **kwargs):
+    def __init__(self, pars=None, init_prev_data=None, **kwargs):
         super().__init__()
 
         self.requires = sti.StructuredSexual
@@ -39,6 +39,7 @@ class HIV(ss.Infection):
 
             # Initialization
             init_prev=ss.bernoulli(p=0.05),
+            rel_init_prev=1,
             init_diagnosed=ss.bernoulli(p=0),
             dist_ti_init_infected=ss.uniform(low=-10 * 12, high=0),
 
@@ -51,7 +52,7 @@ class HIV(ss.Infection):
             art_efficacy=0.96,  # Efficacy of ART
             time_to_art_efficacy=0.5,  # Time to reach full ART efficacy (in years) - linear increase in efficacy
             art_cd4_pars=dict(cd4_max=1000, cd4_healthy=500),
-            dur_on_art=ss.normal(loc=18, scale=5),
+            dur_on_art=ss.lognorm_ex(18, 5),
             dur_post_art=ss.normal(loc=self.dur_post_art_mean, scale=self.dur_post_art_scale),
             dur_post_art_scale_factor=0.1,
         )
@@ -65,6 +66,11 @@ class HIV(ss.Infection):
             self._death_prob = self.pars.p_hiv_death
         else:
             self._death_prob = ss.bernoulli(p=self.pars.p_hiv_death)
+
+        # Set initial prevalence
+        self.init_prev_data = init_prev_data
+        if init_prev_data is not None:
+            self.pars.init_prev = ss.bernoulli(sti.make_init_prev_fn)
 
         # States
         self.add_states(
