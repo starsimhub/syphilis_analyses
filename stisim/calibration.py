@@ -117,7 +117,7 @@ class Calibration(sc.prettyobj):
     pip install optuna).
     Args:
         sim          (Sim)  : the simulation to calibrate
-        datafile     (str)  : filepath
+        data         (df)   : pandas dataframe
         calib_pars   (dict) : a dictionary of the parameters to calibrate of the format dict(key1=[best, low, high])
         fit_args     (dict) : a dictionary of options that are passed to sim.compute_fit() to calculate the goodness-of-fit
         par_samplers (dict) : an optional mapping from parameters to the Optuna sampler to use for choosing new points for each; by default, suggest_float

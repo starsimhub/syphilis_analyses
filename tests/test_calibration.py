@@ -89,12 +89,13 @@ def test_calibration(do_plot=True):
         'syphilis.prevalence': 1
         }
 
+    data = pd.read_csv('test_data/zimbabwe_calib.csv')
 
     # Make the calibration
     calib = sti.Calibration(
         calib_pars = calib_pars,
         sim = sim,
-        datafile='test_data/zimbabwe_calib.csv',
+        data=data,
         weights=weights,
         total_trials=4, n_workers=2, die=True
     )
