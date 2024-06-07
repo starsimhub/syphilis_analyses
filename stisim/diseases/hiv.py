@@ -124,7 +124,7 @@ class HIV(ss.Infection):
         if self.pars.beta_f2m is not None:
             self.pars.beta['structuredsexual'][1] *= self.pars.beta_f2m
         if self.pars.beta_m2c is not None:
-            self.pars.beta['maternal'][1] *= self.pars.beta_m2c
+            self.pars.beta['maternal'][0] *= self.pars.beta_m2c
 
         return
 
