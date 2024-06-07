@@ -64,7 +64,7 @@ def test_hiv_epi():
     par_effects = dict(
         dur_acute=[1/12, 24/12],
         init_prev=[0.01, 0.1],
-        beta=[0.1, 0.95]  # Beta for male to female transmission; opposite direction uses half this value
+        beta=[0.05, 0.1]  # Beta for male to female transmission; opposite direction uses half this value
     )
 
     # Loop over each of the above parameters and make sure they affect the epi dynamics in the expected ways
