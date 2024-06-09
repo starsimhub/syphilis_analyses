@@ -20,54 +20,60 @@ class TrackValues(ss.Analyzer):
         self.syph_rel_sus = np.empty((sim.npts, self.n), dtype=ss.dtypes.float)
         self.syph_rel_trans = np.empty((sim.npts, self.n), dtype=ss.dtypes.float)
 
-        self.cd4 =  np.empty((sim.npts, self.n), dtype=ss.dtypes.float)
+        self.cd4 = np.empty((sim.npts, self.n), dtype=ss.dtypes.float)
+
+        self.care_seeking = np.empty((sim.npts, self.n), dtype=ss.dtypes.float)
 
     @property
-    def has_hiv(self): return 'hiv' in self.sim.diseases
+    def has_hiv(self):
+        return 'hiv' in self.sim.diseases
 
     @property
-    def has_syph(self): return isinstance(self.sim.diseases.get('syphilis'), sti.Syphilis)
+    def has_syph(self):
+        return isinstance(self.sim.diseases.get('syphilis'), sti.Syphilis)
 
     def apply(self, sim):
 
         if self.has_hiv:
             self.hiv_rel_sus[sim.ti, :self.n] = sim.diseases.hiv.rel_sus.values[:self.n]
-            self.hiv_rel_trans[sim.ti,:self.n] = sim.diseases.hiv.rel_trans.values[:self.n]
+            self.hiv_rel_trans[sim.ti, :self.n] = sim.diseases.hiv.rel_trans.values[:self.n]
 
         if self.has_syph:
-            self.syph_rel_sus[sim.ti,:self.n] = sim.diseases.syphilis.rel_sus.values[:self.n]
-            self.syph_rel_trans[sim.ti,:self.n] = sim.diseases.syphilis.rel_trans.values[:self.n]
+            self.syph_rel_sus[sim.ti, :self.n] = sim.diseases.syphilis.rel_sus.values[:self.n]
+            self.syph_rel_trans[sim.ti, :self.n] = sim.diseases.syphilis.rel_trans.values[:self.n]
 
-        self.cd4[sim.ti,:self.n] = sim.diseases.hiv.cd4.values[:self.n]
+        self.cd4[sim.ti, :self.n] = sim.diseases.hiv.cd4.values[:self.n]
+        self.care_seeking[sim.ti, :self.n] = sim.diseases.hiv.care_seeking[:self.n]
 
-    def plot(self, agents:dict):
+    def plot(self, agents: dict):
         """
         :param agents: Dictionary of events per agent {'agent_description':[('event_type', ti),...]}
         :return: Matplotlib figure
         """
 
         def plot_with_events(ax, x, y, agents, title):
-            h = ax.plot(x,y)
+            h = ax.plot(x, y)
             x_ev = []
             y_ev = []
             for i, events in enumerate(agents.values()):
                 for event in events:
                     x_ev.append(self.sim.yearvec[event[1]])
-                    y_ev.append(y[event[1],i])
-            ax.scatter(x_ev, y_ev, marker='*', color='yellow', edgecolor='red',  s=100, linewidths=0.5, zorder=100)
+                    y_ev.append(y[event[1], i])
+            ax.scatter(x_ev, y_ev, marker='*', color='yellow', edgecolor='red', s=100, linewidths=0.5, zorder=100)
             ax.set_title(title)
             return h
 
         if self.has_syph:
-            fig, ax = plt.subplots(2,3)
+            fig, ax = plt.subplots(2, 4)
         else:
-            fig, ax = plt.subplots(1,3)
+            fig, ax = plt.subplots(1, 4)
 
         ax = ax.ravel()
 
         h = plot_with_events(ax[0], self.sim.yearvec, self.cd4, agents, 'CD4')
         h = plot_with_events(ax[1], self.sim.yearvec, self.hiv_rel_sus, agents, 'HIV rel_sus')
         h = plot_with_events(ax[2], self.sim.yearvec, self.hiv_rel_trans, agents, 'HIV rel_trans')
+        h = plot_with_events(ax[3], self.sim.yearvec, self.care_seeking, agents, 'HIV care seeking')
 
         if self.has_syph:
             h = plot_with_events(ax[4], self.sim.yearvec, self.syph_rel_sus, agents, 'Syphilis rel_sus')
@@ -89,14 +95,22 @@ class PerformTest(ss.Intervention):
         self.syphilis_infections = defaultdict(list)
         self.art_start = defaultdict(list)
         self.art_stop = defaultdict(list)
+        self.pregnant = defaultdict(list)
 
         if events:
             for uid, event, ti in events:
-                if event == 'hiv_infection': self.hiv_infections[ti].append(uid)
-                elif event == 'syphilis_infection': self.syphilis_infections[ti].append(uid)
-                elif event == 'art_start': self.art_start[ti].append(uid)
-                elif event == 'art_stop': self.art_stop[ti].append(uid)
-                else: raise Exception(f'Unknown event "{event}"')
+                if event == 'hiv_infection':
+                    self.hiv_infections[ti].append(uid)
+                elif event == 'syphilis_infection':
+                    self.syphilis_infections[ti].append(uid)
+                elif event == 'art_start':
+                    self.art_start[ti].append(uid)
+                elif event == 'art_stop':
+                    self.art_stop[ti].append(uid)
+                elif event == 'pregnant':
+                    self.pregnant[ti].append(uid)
+                else:
+                    raise Exception(f'Unknown event "{event}"')
 
     def initiate_ART(self, uids):
         if len(uids):
@@ -106,6 +120,10 @@ class PerformTest(ss.Intervention):
         if len(uids):
             self.sim.diseases.hiv.stop_art(ss.uids(uids))
 
+    def set_pregnancy(self, uids):
+        self.sim.demographics.pregnancy.pregnant[ss.uids(uids)] = True
+        self.sim.demographics.pregnancy.ti_pregnant[ss.uids(uids)] = self.sim.ti
+
     def apply(self, sim):
         self.initiate_ART(self.art_start[sim.ti])
         self.end_ART(self.art_stop[sim.ti])
@@ -114,27 +132,31 @@ class PerformTest(ss.Intervention):
         if 'syphilis' in sim.diseases:
             self.sim.diseases.syphilis.set_prognoses(ss.uids(self.syphilis_infections[sim.ti]))
 
+        # Set pregnancies:
+        self.set_pregnancy(self.pregnant[sim.ti])
+
 
 def test_hiv():
     # AGENTS
     agents = sc.odict()
     agents['No infection'] = []
     agents['Infection without ART'] = [('hiv_infection', 1)]
-    agents['Goes onto ART early (CD4 > 200) and stays on forever'] = [('hiv_infection', 1), ('art_start', 1*12)]
-    agents['Goes onto ART late (CD4 < 200) and stays on forever'] = [('hiv_infection', 1), ('art_start', 10*12)]
-    agents['Goes off ART with CD4 > 200'] = [('hiv_infection', 1), ('art_start', 5*12), ('art_stop', 12*12)]
-    agents['Goes off ART with CD4 < 200'] = [('hiv_infection', 1), ('art_start', 9*12), ('art_stop', 12*12)]
+    agents['Goes onto ART early (CD4 > 200) and stays on forever'] = [('hiv_infection', 1), ('art_start', 1 * 12)]
+    agents['Goes onto ART late (CD4 < 200) and stays on forever'] = [('hiv_infection', 1), ('art_start', 10 * 12)]
+    agents['Goes off ART with CD4 > 200'] = [('hiv_infection', 1), ('art_start', 5 * 12), ('art_stop', 12 * 12)]
+    agents['Goes off ART with CD4 < 200'] = [('hiv_infection', 1), ('art_start', 9 * 12), ('art_stop', 12 * 12)]
+    agents['pregnant'] = [('pregnant', 300), ('hiv_infection', 580)]
 
     events = []
     for i, x in enumerate(agents.values()):
         for y in x:
-            events.append( (i,) + y )
+            events.append((i,) + y)
 
     pars = {}
     pars['n_agents'] = len(agents)
     pars['start'] = 2020
     pars['end'] = 2040
-    pars['dt'] = 1/12
+    pars['dt'] = 1 / 12
     hiv = sti.HIV(init_prev=0, p_hiv_death=0, dur_latent=5, include_aids_deaths=False, beta={'structuredsexual': [0, 0], 'maternal': [0, 0]})
     pars['diseases'] = [hiv]
     pars['networks'] = [sti.StructuredSexual(), ss.MaternalNet()]
@@ -143,9 +165,10 @@ def test_hiv():
     output = TrackValues()
     pars['analyzers'] = output
 
-    sim = ss.Sim(pars,copy_inputs=False).run()
+    sim = ss.Sim(pars, copy_inputs=False).run()
     fig = output.plot(agents)
     return sim
+
 
 def test_hiv_syph():
     # AGENTS
@@ -181,6 +204,7 @@ def test_hiv_syph():
     fig = output.plot(agents)
 
     return sim
+
 
 if __name__ == '__main__':
     s0 = test_hiv()
