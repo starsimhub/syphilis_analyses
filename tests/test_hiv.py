@@ -145,7 +145,7 @@ def test_hiv():
     agents['Goes onto ART late (CD4 < 200) and stays on forever'] = [('hiv_infection', 1), ('art_start', 10 * 12)]
     agents['Goes off ART with CD4 > 200'] = [('hiv_infection', 1), ('art_start', 5 * 12), ('art_stop', 12 * 12)]
     agents['Goes off ART with CD4 < 200'] = [('hiv_infection', 1), ('art_start', 9 * 12), ('art_stop', 12 * 12)]
-    agents['pregnant'] = [('pregnant', 300), ('hiv_infection', 580)]
+    agents['pregnant'] = [('pregnant', 5), ('hiv_infection', 10)]
 
     events = []
     for i, x in enumerate(agents.values()):
