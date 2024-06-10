@@ -89,7 +89,7 @@ def test_calibration(do_plot=True):
         'syphilis.prevalence': 1
         }
 
-    data = pd.read_csv('test_data/zimbabwe_calib.csv')
+    data = pd.read_csv(sti.root/'tests'/'test_data'/'zimbabwe_calib.csv')
 
     # Make the calibration
     calib = sti.Calibration(
