@@ -46,7 +46,7 @@ class StructuredSexual(ss.SexualNetwork):
             f_age_group_bins=dict(  # For separating women into age groups: teens, young women, adult women
                 teens=(10, 20),
                 young=(20, 25),
-                adult=(25, 100),
+                adult=(25, np.inf),
             ),
 
             # Debut
