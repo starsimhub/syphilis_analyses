@@ -105,8 +105,8 @@ class StructuredSexual(ss.SexualNetwork):
 
             # Distributions derived from parameters above - don't adjust
             age_diffs=ss.normal(loc=self.age_diff_fn_loc, scale=self.age_diff_fn_scale),
-            dur_stable=ss.normal(loc=self.stable_loc, scale=self.stable_scale),  # TODO: change to lognorm
-            dur_casual=ss.normal(loc=self.casual_loc, scale=self.casual_scale),
+            dur_stable=ss.lognorm_ex(loc=self.stable_loc, scale=self.stable_scale),
+            dur_casual=ss.lognorm_ex(loc=self.casual_loc, scale=self.casual_scale),
         )
 
         self.update_pars(pars=pars, **kwargs)
@@ -144,6 +144,9 @@ class StructuredSexual(ss.SexualNetwork):
 
     @staticmethod
     def get_age_risk_pars(module, sim, uids, par):
+        if uids is None:
+            return np.nan, np.nan
+
         abins = module.pars.f_age_group_bins
         loc = pd.Series(0., index=uids)
         scale = pd.Series(1., index=uids)
