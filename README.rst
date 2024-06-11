@@ -1,10 +1,12 @@
 STIsim
 ======
 
-.. |Build-Status| image:: https://github.com/starsimhub/stisim/actions/workflows/tests.yaml/badge.svg
-    :target: https://github.com/starsimhub/stisim
+.. |tests| image:: https://github.com/starsimhub/stisim/actions/workflows/tests.yaml/badge.svg
 
+.. |pypi| image:: https://img.shields.io/pypi/v/stisim?label=PyPI
+    :target: https://pypi.org/project/stisim/
 
+|tests| |pypi|
 
 **Warning! STIsim is still in the early stages of development. It is being shared solely for transparency and to facilitate collaborative development. It is not ready to be used for real research or policy questions.**
 
