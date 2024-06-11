@@ -5,25 +5,22 @@ Define default HIV disease module and related interventions
 import numpy as np
 import sciris as sc
 import starsim as ss
-import pandas as pd
-from collections import defaultdict
+import stisim as sti
 
 
 __all__ = ['HIV']
 
-import stisim as sti
-
 
 class HIV(ss.Infection):
 
-    def __init__(self, pars=None, **kwargs):
+    def __init__(self, pars=None, init_prev_data=None, **kwargs):
         super().__init__()
 
         self.requires = sti.StructuredSexual
 
         # Parameters
         self.default_pars(
-            # Natural history
+            # Natural history without treatment
             cd4_start=ss.normal(loc=800, scale=50),
             cd4_latent=ss.normal(loc=500, scale=50),
             dur_acute=ss.lognorm_ex(3/12, 1/12),    # Duration of acute HIV infection
@@ -42,7 +39,8 @@ class HIV(ss.Infection):
 
             # Initialization
             init_prev=ss.bernoulli(p=0.05),
-            init_diagnosed=ss.bernoulli(p=0.01),
+            rel_init_prev=1,
+            init_diagnosed=ss.bernoulli(p=0),
             dist_ti_init_infected=ss.uniform(low=-10 * 12, high=0),
 
             # Care seeking
@@ -54,7 +52,7 @@ class HIV(ss.Infection):
             art_efficacy=0.96,  # Efficacy of ART
             time_to_art_efficacy=0.5,  # Time to reach full ART efficacy (in years) - linear increase in efficacy
             art_cd4_pars=dict(cd4_max=1000, cd4_healthy=500),
-            dur_on_art=ss.normal(loc=18, scale=5),
+            dur_on_art=ss.lognorm_ex(18, 5),
             dur_post_art=ss.normal(loc=self.dur_post_art_mean, scale=self.dur_post_art_scale),
             dur_post_art_scale_factor=0.1,
         )
@@ -68,6 +66,11 @@ class HIV(ss.Infection):
             self._death_prob = self.pars.p_hiv_death
         else:
             self._death_prob = ss.bernoulli(p=self.pars.p_hiv_death)
+
+        # Set initial prevalence
+        self.init_prev_data = init_prev_data
+        if init_prev_data is not None:
+            self.pars.init_prev = ss.bernoulli(sti.make_init_prev_fn)
 
         # States
         self.add_states(
@@ -104,10 +107,10 @@ class HIV(ss.Infection):
             ss.FloatArr('ti_diagnosed'),
         )
 
-        self._pending_ARTtreatment = defaultdict(list)
-        self.initial_hiv_maternal_beta = None
-
         return
+
+    @property
+    def include_mtct(self): return 'pregnancy' in self.sim.demographics
 
     def init_pre(self, sim):
         """
@@ -121,7 +124,35 @@ class HIV(ss.Infection):
         if self.pars.beta_f2m is not None:
             self.pars.beta['structuredsexual'][1] *= self.pars.beta_f2m
         if self.pars.beta_m2c is not None:
-            self.pars.beta['maternal'][1] *= self.pars.beta_m2c
+            self.pars.beta['maternal'][0] *= self.pars.beta_m2c
+
+        return
+
+    def init_results(self):
+        """
+        Initialize results
+        """
+        super().init_results()
+        npts = self.sim.npts
+        self.results += ss.Result(self.name, 'new_deaths', npts, dtype=int, scale=True)
+        self.results += ss.Result(self.name, 'cum_deaths', npts, dtype=int, scale=True)
+        self.results += ss.Result(self.name, 'new_diagnoses', npts, dtype=int, scale=True)
+        self.results += ss.Result(self.name, 'cum_diagnoses', npts, dtype=int, scale=True)
+        self.results += ss.Result(self.name, 'new_agents_on_art', npts, dtype=float, scale=True)
+        self.results += ss.Result(self.name, 'cum_agents_on_art', npts, dtype=float, scale=True)
+        self.results += ss.Result(self.name, 'prevalence_sw', npts, dtype=float)
+        self.results += ss.Result(self.name, 'prevalence_client', npts, dtype=float)
+        self.results += ss.Result(self.name, 'p_on_art', npts, dtype=float, scale=False)
+        if self.include_mtct:
+            self.results += ss.Result(self.name, 'n_on_art_pregnant', npts, dtype=float, scale=True)
+
+        # Add FSW and clients to results:
+        for risk_group in range(self.sim.networks.structuredsexual.pars.n_risk_groups):
+            for sex in ['female', 'male']:
+                self.results += ss.Result(self.name, 'prevalence_risk_group_' + str(risk_group) + '_' + sex, npts,
+                                          dtype=float)
+                self.results += ss.Result(self.name, 'new_infections_risk_group_' + str(risk_group) + '_' + sex,
+                                          npts, dtype=float)
 
         return
 
@@ -212,7 +243,7 @@ class HIV(ss.Infection):
     @staticmethod
     def death_prob(module, sim=None, uids=None):
         cd4_bins = np.array([1000, 500, 350, 200, 50, 0])
-        death_prob = sim.dt*np.array([0.003, 0.003, 0.005, 0.001, 0.05, 0.200])  # Values smaller than the first bin edge get assigned to the last bin.
+        death_prob = sim.dt*np.array([0.003, 0.003, 0.005, 0.01, 0.05, 0.300])  # Values smaller than the first bin edge get assigned to the last bin.
         return death_prob[np.digitize(module.cd4[uids], cd4_bins)]
 
     @staticmethod
@@ -225,7 +256,7 @@ class HIV(ss.Infection):
         """
         Set CD4 counts
         """
-        uids = ss.uids(self.cd4_start.isnan)
+        uids = ss.uids(np.isnan(self.cd4_start.raw).nonzero()[-1])
         self.cd4_start[uids] = self.pars.cd4_start.rvs(uids)
         self.cd4_nadir[uids] = sc.dcp(self.cd4_start[uids])
         return
@@ -252,9 +283,10 @@ class HIV(ss.Infection):
         # increase care-seeking for pregnant women and decrease again after postpartum.
         # This makes it much less likely that pregnant women will stop treatment
         self.init_care_seeking()
-        pregnant = self.sim.demographics.pregnancy.pregnant
-        self.care_seeking[pregnant] = self.baseline_care_seeking[pregnant] * self.pars.maternal_care_scale
-        self.care_seeking[~pregnant] = self.baseline_care_seeking[~pregnant]
+        if self.include_mtct:
+            pregnant = self.sim.demographics.pregnancy.pregnant
+            self.care_seeking[pregnant] = self.baseline_care_seeking[pregnant] * self.pars.maternal_care_scale
+            self.care_seeking[~pregnant] = self.baseline_care_seeking[~pregnant]
 
         # Adjust CD4 counts for people receiving treatment - logarithmic increase
         if self.on_art.any():
@@ -294,6 +326,11 @@ class HIV(ss.Infection):
 
         # Update transmission
         self.update_transmission()
+
+        # Check CD4
+        if np.isnan(self.cd4[self.infected]).any():
+            errormsg = 'Invalid entry for CD4'
+            raise ValueError(errormsg)
 
         # Update deaths. We capture deaths from AIDS (i.e., when CD4 count drops to ~0) as well as deaths from
         # serious HIV-related illnesses, which can occur throughout HIV.
@@ -344,32 +381,6 @@ class HIV(ss.Infection):
 
         return
 
-    def init_results(self):
-        """
-        Initialize results
-        """
-        super().init_results()
-        npts = self.sim.npts
-        self.results += ss.Result(self.name, 'new_deaths', npts, dtype=int, scale=True)
-        self.results += ss.Result(self.name, 'cum_deaths', npts, dtype=int, scale=True)
-        self.results += ss.Result(self.name, 'new_diagnoses', npts, dtype=int, scale=True)
-        self.results += ss.Result(self.name, 'cum_diagnoses', npts, dtype=int, scale=True)
-        self.results += ss.Result(self.name, 'new_agents_on_art', npts, dtype=float, scale=True)
-        self.results += ss.Result(self.name, 'cum_agents_on_art', npts, dtype=float, scale=True)
-        self.results += ss.Result(self.name, 'prevalence_sw', npts, dtype=float)
-        self.results += ss.Result(self.name, 'prevalence_client', npts, dtype=float)
-        self.results += ss.Result(self.name, 'n_on_art_pregnant', npts, dtype=float, scale=True)
-
-        # Add FSW and clients to results:
-        for risk_group in range(self.sim.networks.structuredsexual.pars.n_risk_groups):
-            for sex in ['female', 'male']:
-                self.results += ss.Result(self.name, 'prevalence_risk_group_' + str(risk_group) + '_' + sex, npts,
-                                          dtype=float)
-                self.results += ss.Result(self.name, 'new_infections_risk_group_' + str(risk_group) + '_' + sex,
-                                          npts, dtype=float)
-
-        return
-
     def update_results(self):
         """
         Update results at each time step
@@ -382,7 +393,9 @@ class HIV(ss.Infection):
         self.results['cum_diagnoses'][ti] = np.sum(self.results['new_diagnoses'][:ti + 1])
         self.results['new_agents_on_art'][ti] = np.count_nonzero(self.ti_art == ti)
         self.results['cum_agents_on_art'][ti] = np.sum(self.results['new_agents_on_art'][:ti + 1])
-        self.results['n_on_art_pregnant'][ti] = np.count_nonzero(self.on_art & self.sim.people.pregnancy.pregnant)
+        if self.include_mtct:
+            self.results['n_on_art_pregnant'][ti] = np.count_nonzero(self.on_art & self.sim.people.pregnancy.pregnant)
+        self.results['p_on_art'][ti] = sc.safedivide(self.results['n_on_art'][ti], self.results['n_infected'][ti])
 
         # Subset by FSW and client:
         fsw_infected = self.infected[self.sim.networks.structuredsexual.fsw]
@@ -429,6 +442,7 @@ class HIV(ss.Infection):
 
         self.ti_infected[uids] = ti
         self.ti_acute[uids] = ti
+        self.cd4[uids] = self.cd4_start[uids]
 
         # Set timing and CD4 count of latent infection
         dur_acute = self.pars.dur_acute.rvs(uids)
@@ -444,7 +458,10 @@ class HIV(ss.Infection):
         return
 
     def set_congenital(self, target_uids, source_uids):
-        return self.set_prognoses(target_uids, source_uids)
+        self.cd4_start[target_uids] = sc.dcp(self.cd4_start[source_uids])
+        self.cd4_nadir[target_uids] = sc.dcp(self.cd4_start[target_uids])
+        self.set_prognoses(target_uids, source_uids)
+        return
 
     # Treatment-related changes
     def start_art(self, uids):
@@ -522,6 +539,9 @@ class HIV(ss.Infection):
 
         # Set decline
         dur_post_art = self.pars.dur_post_art.rvs(uids)
+        if np.isnan(dur_post_art).any():
+            errormsg = 'Invalid entry for post-ART duration'
+            raise ValueError(errormsg)
         self.ti_zero[uids] = ti + (dur_post_art / dt).astype(int)
 
         return

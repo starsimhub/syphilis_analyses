@@ -117,7 +117,7 @@ class Calibration(sc.prettyobj):
     pip install optuna).
     Args:
         sim          (Sim)  : the simulation to calibrate
-        datafile     (str)  : filepath
+        data         (df)   : pandas dataframe
         calib_pars   (dict) : a dictionary of the parameters to calibrate of the format dict(key1=[best, low, high])
         fit_args     (dict) : a dictionary of options that are passed to sim.compute_fit() to calculate the goodness-of-fit
         par_samplers (dict) : an optional mapping from parameters to the Optuna sampler to use for choosing new points for each; by default, suggest_float
@@ -139,7 +139,7 @@ class Calibration(sc.prettyobj):
 
     """
 
-    def __init__(self, sim, datafile, calib_pars=None, weights=None, fit_args=None, par_samplers=None, n_trials=None, n_workers=None,
+    def __init__(self, sim, data, calib_pars=None, weights=None, fit_args=None, par_samplers=None, n_trials=None, n_workers=None,
                 total_trials=None, name=None, db_name=None, estimator=None, keep_db=None, storage=None, rand_seed=None,
                  sampler=None, label=None, die=False, verbose=True):
 
@@ -167,8 +167,11 @@ class Calibration(sc.prettyobj):
         self.verbose        = verbose
         self.calibrated     = False
 
-        # Load data
-        self.target_data = pd.read_csv(datafile)
+        # Load data -- this is expecting a dataframe with a column for 'year' and other columns for to sim results
+        if not isinstance(data, pd.DataFrame):
+            errormsg = 'Please pass data as a pandas dataframe'
+            raise ValueError(errormsg)
+        self.target_data = data
         self.target_data.set_index('year', inplace=True)
 
         # Temporarily store a filename

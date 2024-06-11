@@ -58,19 +58,13 @@ def test_syph_epi():
 def test_hiv_epi():
     sc.heading('Test epi dynamics of hiv')
 
-    location = 'zimbabwe'
-    fertility_rates = {'fertility_rate': pd.read_csv(sti.data/f'{location}_asfr.csv')}
-    pregnancy = ss.Pregnancy(pars=fertility_rates)
-    death_rates = {'death_rate': pd.read_csv(sti.data/f'{location}_deaths.csv'), 'units': 1}
-    death = ss.Deaths(death_rates)
-
-    base_pars = dict(n_agents=500, networks=[sti.StructuredSexual(), ss.MaternalNet()],demographics=[pregnancy, death])
+    base_pars = dict(n_agents=500, networks=sti.StructuredSexual())
 
     # Define the parameters to vary
     par_effects = dict(
-        dur_acute=[3/12, 12/12],
+        dur_acute=[1/12, 24/12],
         init_prev=[0.01, 0.1],
-        beta=[0.01, 0.95]  # Beta for male to female transmission; opposite direction uses half this value
+        beta=[0.05, 0.1]  # Beta for male to female transmission; opposite direction uses half this value
     )
 
     # Loop over each of the above parameters and make sure they affect the epi dynamics in the expected ways
@@ -83,15 +77,11 @@ def test_hiv_epi():
         pars1 = sc.dcp(base_pars)
 
         if par == 'beta':
-            simpardict_lo = {'beta': {'structuredsexual': [lo, lo/2],
-                                      'maternal': [0.95, 0.0]}}
-            simpardict_hi = {'beta': {'structuredsexual': [hi, hi/2],
-                                      'maternal': [0.95, 0.0]}}
+            simpardict_lo = {'beta': {'structuredsexual': [lo, lo/2]}}
+            simpardict_hi = {'beta': {'structuredsexual': [hi, hi/2]}}
         else:
-            simpardict_lo = {par: lo, 'beta': {'structuredsexual': [0.3, 0.15],
-                                               'maternal': [0.95, 0.0]}}
-            simpardict_hi = {par: hi, 'beta': {'structuredsexual': [0.3, 0.15],
-                                               'maternal': [0.95, 0.0]}}
+            simpardict_lo = {par: lo, 'beta': {'structuredsexual': [0.3, 0.15]}}
+            simpardict_hi = {par: hi, 'beta': {'structuredsexual': [0.3, 0.15]}}
 
         pars0['diseases'] = sti.HIV(**simpardict_lo)
         pars1['diseases'] = sti.HIV(**simpardict_hi)
@@ -114,5 +104,5 @@ def test_hiv_epi():
 
 if __name__ == '__main__':
     sc.options(interactive=False)
-    s1, s2 = test_syph_epi()
+    # s1, s2 = test_syph_epi()
     s3, s4 = test_hiv_epi()
