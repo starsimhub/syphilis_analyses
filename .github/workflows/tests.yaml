@@ -3,9 +3,9 @@ on:
   push:
     branches:
       - main
-  pull_request: # Run on all pull requests
-  push:
-    tags: '*' # Run for all tags
+    tags: v*
+  pull_request:
+
 
 jobs:
   test:
