@@ -9,7 +9,7 @@ from collections import defaultdict
 import sciris as sc
 
 
-__all__ = ['HIVTest', 'ART']
+__all__ = ['HIVTest', 'ART', 'VMMC']
 
 
 class HIVTest(ss.Intervention):
@@ -23,7 +23,7 @@ class HIVTest(ss.Intervention):
          kwargs         (dict)          : passed to Intervention()
     """
 
-    def __init__(self, pars=None, test_prob_data=None, years=None, eligibility=None, name=None, label=None, **kwargs):
+    def __init__(self, pars=None, test_prob_data=None, years=None, start_year=None, eligibility=None, name=None, label=None, **kwargs):
         super().__init__(name=name, label=label)
         self.default_pars(
             rel_test=1,
@@ -31,13 +31,18 @@ class HIVTest(ss.Intervention):
         self.update_pars(pars, **kwargs)
 
         # Set testing probabilities and years
+        if years is not None and start_year is not None:
+            errormsg = 'Provide either years or start_year, not both.'
+            raise ValueError(errormsg)
         self.years = years
+        self.start_year = start_year
         self.test_prob_data = test_prob_data
         self.test_prob = ss.bernoulli(self.make_test_prob_fn)
 
-        # Set eligibility and timepoints
+        # Set eligibility
         self.eligibility = eligibility
-        self.timepoints = []  # The start and end timepoints of the intervention
+        if self.eligibility is None:
+            self.eligibility = lambda sim: ~sim.diseases.hiv.diagnosed
 
         # States
         self.tested = ss.BoolArr('tested', default=False)
@@ -47,6 +52,8 @@ class HIVTest(ss.Intervention):
 
     def init_pre(self, sim):
         super().init_pre(sim)
+        if self.start_year is None:
+            self.start_year = self.years[0]
         self.init_results()
         return
 
@@ -78,30 +85,35 @@ class HIVTest(ss.Intervention):
         return test_prob
 
     def apply(self, sim):
-        hiv = sim.diseases.hiv
+        if sim.year > self.start_year:
+            hiv = sim.diseases.hiv
 
-        # Find who's eligible to test, who gets a test, and who is diagnosed
-        eligible_uids = self.check_eligibility(sim)  # Apply eligiblity
-        if len(eligible_uids):
-            tester_uids = self.test_prob.filter(eligible_uids)
-            if len(tester_uids):
-                # Add results and states for testers
-                self.results['new_tests'][sim.ti] += len(tester_uids)
-                self.tested[tester_uids] = True
-                self.ti_tested[tester_uids] = sim.ti
+            # Find who's eligible to test, who gets a test, and who is diagnosed
+            eligible_uids = self.check_eligibility(sim)  # Apply eligiblity
+            if len(eligible_uids):
+                tester_uids = self.test_prob.filter(eligible_uids)
+                if len(tester_uids):
+                    # Add results and states for testers
+                    self.results['new_tests'][sim.ti] += len(tester_uids)
+                    self.tested[tester_uids] = True
+                    self.ti_tested[tester_uids] = sim.ti
 
-                # Add results and states for diagnoses
-                pos_uids = tester_uids[hiv.infected[tester_uids]]
-                self.results['new_diagnoses'][sim.ti] += len(pos_uids)
-                self.diagnosed[pos_uids] = True
-                self.ti_diagnosed[pos_uids] = sim.ti
-                hiv.diagnosed[pos_uids] = True
-                hiv.ti_diagnosed[pos_uids] = sim.ti
+                    # Add results and states for diagnoses
+                    pos_uids = tester_uids[hiv.infected[tester_uids]]
+                    self.results['new_diagnoses'][sim.ti] += len(pos_uids)
+                    self.diagnosed[pos_uids] = True
+                    self.ti_diagnosed[pos_uids] = sim.ti
+                    hiv.diagnosed[pos_uids] = True
+                    hiv.ti_diagnosed[pos_uids] = sim.ti
 
         return
 
     def check_eligibility(self, sim):
-        return self.eligibility(sim).uids
+        if self.eligibility is not None:
+            uids = self.eligibility(sim).uids
+        else:
+            uids = sim.people.alive.uids
+        return uids
 
 
 class ART(ss.Intervention):
@@ -109,7 +121,7 @@ class ART(ss.Intervention):
     ART-treatment intervention by Robyn Stuart, Daniel Klein and Cliff Kerr, edited by Alina Muellenmeister
     """
 
-    def __init__(self, pars=None, coverage_data=None, **kwargs):
+    def __init__(self, pars=None, coverage_data=None, start_year=None, **kwargs):
         super().__init__()
         self.default_pars(
             init_prob=ss.bernoulli(p=0.9),  # Probability that a newly diagnosed person will initiate treatment
@@ -118,11 +130,19 @@ class ART(ss.Intervention):
         self.update_pars(pars, **kwargs)
         self.coverage_data = coverage_data
         self.coverage = None  # Set below
+        self.coverage_format = None  # Set below
         return
 
     def init_pre(self, sim):
         super().init_pre(sim)
-        self.coverage = sc.smoothinterp(sim.yearvec, self.coverage_data.index.values, self.coverage_data.n_art.values)
+        data = self.coverage_data
+        if data is not None:
+            if (len(data.columns) > 1) or (data.columns[0] not in ['n_art', 'p_art']):
+                errormsg = 'Expecting a dataframe with a single column labeled n_art or p_art'
+                raise ValueError(errormsg)
+            colname = data.columns[0]
+            self.coverage_format = colname
+            self.coverage = sc.smoothinterp(sim.yearvec, data.index.values, data[colname].values)
         self.initialized = True
         return
 
@@ -135,7 +155,13 @@ class ART(ss.Intervention):
 
         # Figure out how many people should be treated
         if sim.year < self.pars.future_coverage['year']:
-            n_to_treat = int(self.coverage[sim.ti]/sim.pars.pop_scale)
+            if self.coverage is None:
+                n_to_treat = 0
+            else:
+                if self.coverage_format is 'n_art':
+                    n_to_treat = int(self.coverage[sim.ti]/sim.pars.pop_scale)
+                elif self.coverage_format is 'p_art':
+                    n_to_treat = int(self.coverage[sim.ti]*len(inf_uids))
         else:
             p_cov = self.pars.future_coverage['prop']
             n_to_treat = int(p_cov*len(inf_uids))
@@ -224,4 +250,92 @@ class ART(ss.Intervention):
             awaiting_art_uids = (hiv.diagnosed & ~hiv.on_art).uids
             self.prioritize_art(sim, n=n_to_add, awaiting_art_uids=awaiting_art_uids)
 
+
+class VMMC(ss.Intervention):
+    def __init__(self, pars=None, coverage_data=None, eligibility=None, **kwargs):
+        super().__init__()
+        self.default_pars(
+            future_coverage={'year': 2022, 'prop': 0.1},
+            eff_circ = 0.6,  # Evidence of a 60% reduction in risk of HIV acquisition: https://www.who.int/teams/global-hiv-hepatitis-and-stis-programmes/hiv/prevention/voluntary-medical-male-circumcision
+        )
+        self.update_pars(pars, **kwargs)
+
+        # Coverage data - can be number or proportion
+        self.coverage_data = coverage_data
+        self.coverage = None  # Set below
+        self.coverage_format = None  # Set below
+        self.eligibility = eligibility  # Determines denominator for coverage if given as a proportion
+
+        # States
+        self.willingness = ss.FloatArr('willingness', default=ss.random())  # Willingness to undergo VMMC
+        self.circumcised = ss.BoolArr('circumcised', default=False)
+        self.ti_circumcised = ss.FloatArr('ti_circumcised')
+
+        return
+
+    def init_pre(self, sim):
+        super().init_pre(sim)
+
+        # Handle coverage dataa
+        data = self.coverage_data
+        if data is not None:
+            if (len(data.columns) > 1) or (data.columns[0] not in ['n_vmmc', 'p_vmmc']):
+                errormsg = 'Expecting a dataframe with a single column labeled n_vmmc or p_vmmc'
+                raise ValueError(errormsg)
+            colname = data.columns[0]
+            self.coverage_format = colname
+            self.coverage = sc.smoothinterp(sim.yearvec, data.index.values, data[colname].values)
+
+        self.init_results()
+
+        return
+
+    def init_post(self):
+        super().init_post()
+        if self.eligibility is None:
+            self.eligibility = lambda sim: sim.people.male & ~self.circumcised
+
+    def init_results(self):
+        npts = self.sim.npts
+        self.results += [
+            ss.Result(self.name, 'new_circumcisions', npts, dtype=float, scale=True),
+            ss.Result(self.name, 'n_circumcised', npts, dtype=float, scale=True)]
+        return
+
+    def apply(self, sim):
+        hiv = sim.diseases.hiv
+        males = sim.people.male
+        m_uids = sim.people.male.uids
+
+        # Figure out how many people should be circumcised
+        if sim.year < self.pars.future_coverage['year']:
+            if self.coverage is None:
+                n_to_circ = 0
+            else:
+                if self.coverage_format is 'n_vmmc':
+                    n_to_circ = int(sim.dt*self.coverage[sim.ti]/sim.pars.pop_scale)
+                elif self.coverage_format is 'p_vmmc':
+                    n_to_circ = int(sim.dt*self.coverage[sim.ti]*len(m_uids))
+        else:
+            p_cov = self.pars.future_coverage['prop']
+            n_to_circ = int(sim.dt*p_cov*len(m_uids))
+
+        if n_to_circ > 0:
+            # Find who's eligible to circumcise
+            eligible_uids = self.check_eligibility(sim)  # Apply eligiblity
+            eligible_uids = eligible_uids[sim.people.male[eligible_uids]]  # Just double check we only have males
+            weights = self.willingness[eligible_uids]
+            choices = np.argsort(-weights)[:n_to_circ]
+            new_circs = eligible_uids[choices]
+
+            self.circumcised[new_circs] = True
+            self.ti_circumcised[new_circs] = sim.ti
+
+        self.results['new_circumcisions'][sim.ti] = n_to_circ
+        self.results['n_circumcised'][sim.ti] = np.count_nonzero(self.circumcised)
+
+        # Reduce rel_sus
+        sim.diseases.hiv.rel_sus[self.circumcised] *= 1-self.pars.eff_circ
+
+        return
 
