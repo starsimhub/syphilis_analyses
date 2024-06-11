@@ -46,7 +46,7 @@ class StructuredSexual(ss.SexualNetwork):
             f_age_group_bins=dict(  # For separating women into age groups: teens, young women, adult women
                 teens=(10, 20),
                 young=(20, 25),
-                adult=(25, 100),
+                adult=(25, np.inf),
             ),
 
             # Debut
@@ -105,8 +105,8 @@ class StructuredSexual(ss.SexualNetwork):
 
             # Distributions derived from parameters above - don't adjust
             age_diffs=ss.normal(loc=self.age_diff_fn_loc, scale=self.age_diff_fn_scale),
-            dur_stable=ss.normal(loc=self.stable_loc, scale=self.stable_scale),  # TODO: change to lognorm
-            dur_casual=ss.normal(loc=self.casual_loc, scale=self.casual_scale),
+            dur_stable=ss.lognorm_ex(loc=self.stable_loc, scale=self.stable_scale),
+            dur_casual=ss.lognorm_ex(loc=self.casual_loc, scale=self.casual_scale),
         )
 
         self.update_pars(pars=pars, **kwargs)
@@ -144,6 +144,9 @@ class StructuredSexual(ss.SexualNetwork):
 
     @staticmethod
     def get_age_risk_pars(module, sim, uids, par):
+        if uids is None:
+            return np.nan, np.nan
+
         abins = module.pars.f_age_group_bins
         loc = pd.Series(0., index=uids)
         scale = pd.Series(1., index=uids)
@@ -345,18 +348,18 @@ class StructuredSexual(ss.SexualNetwork):
 
                 if stable_bools.any():
                     stable_p2 = matched_p2[stable_bools]
-                    dur[stable_p2] = self.pars.dur_stable.rvs(stable_p2)
+                    dur[stable_p2] = np.round(self.pars.dur_stable.rvs(stable_p2))
 
                 if casual_bools.any():
                     casual_p2 = matched_p2[casual_bools]
-                    dur[casual_p2] = self.pars.dur_casual.rvs(casual_p2)
+                    dur[casual_p2] = np.round(self.pars.dur_casual.rvs(casual_p2))
 
             # If there are any mismatched pairs, determine the probability they'll have a non-instantaneous partnership
             if mismatched_risk.any():
                 mismatched_p2 = p2[mismatched_risk]
                 casual_mismatch_bools = self.pars.p_casual_mismatch.rvs(mismatched_p2)
                 casual_mismatch_p2 = mismatched_p2[casual_mismatch_bools]
-                dur[casual_mismatch_p2] = self.pars.dur_casual.rvs(casual_mismatch_p2)
+                dur[casual_mismatch_p2] = np.round(self.pars.dur_casual.rvs(casual_mismatch_p2))
 
         self.append(p1=p1, p2=p2, beta=1-condoms, dur=dur, acts=acts, sw=sw, age_p1=age_p1, age_p2=age_p2)
 
