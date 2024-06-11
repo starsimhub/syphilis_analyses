@@ -1,5 +1,5 @@
-Starsim
-=======
+STIsim
+======
 
 **Warning! STIsim is still in the early stages of development. It is being shared solely for transparency and to facilitate collaborative development. It is not ready to be used for real research or policy questions.**
 
