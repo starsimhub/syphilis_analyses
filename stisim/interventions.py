@@ -158,9 +158,9 @@ class ART(ss.Intervention):
             if self.coverage is None:
                 n_to_treat = 0
             else:
-                if self.coverage_format is 'n_art':
+                if self.coverage_format == 'n_art':
                     n_to_treat = int(self.coverage[sim.ti]/sim.pars.pop_scale)
-                elif self.coverage_format is 'p_art':
+                elif self.coverage_format == 'p_art':
                     n_to_treat = int(self.coverage[sim.ti]*len(inf_uids))
         else:
             p_cov = self.pars.future_coverage['prop']
@@ -312,9 +312,9 @@ class VMMC(ss.Intervention):
             if self.coverage is None:
                 n_to_circ = 0
             else:
-                if self.coverage_format is 'n_vmmc':
+                if self.coverage_format == 'n_vmmc':
                     n_to_circ = int(sim.dt*self.coverage[sim.ti]/sim.pars.pop_scale)
-                elif self.coverage_format is 'p_vmmc':
+                elif self.coverage_format == 'p_vmmc':
                     n_to_circ = int(sim.dt*self.coverage[sim.ti]*len(m_uids))
         else:
             p_cov = self.pars.future_coverage['prop']
