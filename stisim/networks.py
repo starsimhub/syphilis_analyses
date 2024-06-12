@@ -285,7 +285,7 @@ class StructuredSexual(ss.SexualNetwork):
         age_p1 = ppl.age[p1]
         age_p2 = ppl.age[p2]
 
-        # First figure out condom use
+        # First figure out reduction in transmission through condom use
         if self.condom_data is not None:
             if isinstance(self.condom_data, dict):
                 for rgm in range(self.pars.n_risk_groups):
