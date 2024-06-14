@@ -73,7 +73,6 @@ class Syphilis(ss.Infection):
         super().__init__()
         self.default_pars(
             # Adult syphilis natural history, all specified in years
-            dur_exposed = ss.lognorm_ex(mean=1/52, stdev=1/52),  # https://pubmed.ncbi.nlm.nih.gov/9101629/
             dur_primary = ss.lognorm_ex(mean=1.5/12, stdev=1/36),  # https://pubmed.ncbi.nlm.nih.gov/9101629/
             dur_secondary = ss.lognorm_ex(mean=3.6/12, stdev=1.5/12),  # https://pubmed.ncbi.nlm.nih.gov/9101629/
             p_reactivate = ss.bernoulli(p=0.35),  # Probability of reactivating from latent to secondary
@@ -85,7 +84,6 @@ class Syphilis(ss.Infection):
 
             # Transmission by stage
             beta=1.0,  # Placeholder
-            rel_trans_exposed=1,
             rel_trans_primary=1,
             rel_trans_secondary=1,
             rel_trans_latent=0.1,  # Baseline level; this decays exponentially with duration of latent infection
@@ -118,11 +116,10 @@ class Syphilis(ss.Infection):
         # Set initial prevalence
         self.init_prev_data = init_prev_data
         if init_prev_data is not None:
-            self.pars.init_prev = ss.bernoulli(sti.make_init_prev_fn)
+            self.pars.init_prev = ss.bernoulli(self.make_init_prev_fn)
 
         self.add_states(
             # Adult syphilis states
-            ss.BoolArr('exposed'),      # AKA incubating. Free of symptoms, not transmissible
             ss.BoolArr('primary'),      # Primary chancres
             ss.BoolArr('secondary'),    # Inclusive of those who may still have primary chancres
             ss.BoolArr('latent'),       # Can relapse to secondary, remain in latent, or progress to tertiary,
@@ -134,7 +131,6 @@ class Syphilis(ss.Infection):
             ss.BoolArr('congenital'),
     
             # Timestep of state changes
-            ss.FloatArr('ti_exposed'),
             ss.FloatArr('ti_primary'),
             ss.FloatArr('ti_secondary'),
             ss.FloatArr('ti_latent'),
@@ -148,6 +144,10 @@ class Syphilis(ss.Infection):
         )
 
         return
+
+    @staticmethod
+    def make_init_prev_fn(module, sim, uids):
+        return sti.make_init_prev_fn(module, sim, uids, active=True)
 
     @property
     def naive(self):
@@ -167,17 +167,16 @@ class Syphilis(ss.Infection):
     @property
     def infectious(self):
         """ Infectious """
-        return self.active | self.latent | self.exposed
+        return self.active | self.latent
 
     def init_results(self):
         """ Initialize results """
         super().init_results()
         npts = self.sim.npts
-        self.results += [
-            ss.Result(self.name, 'new_nnds',       npts, dtype=int, scale=True),
-            ss.Result(self.name, 'new_stillborns', npts, dtype=int, scale=True),
-            ss.Result(self.name, 'new_congenital', npts, dtype=int, scale=True),
-        ]
+        self.results += ss.Result(self.name, 'new_nnds', npts, dtype=int, scale=True)
+        self.results += ss.Result(self.name, 'new_stillborns',  npts, dtype=int, scale=True)
+        self.results += ss.Result(self.name, 'new_congenital',  npts, dtype=int, scale=True)
+        self.results += ss.Result(self.name, 'new_deaths',      npts, dtype=int, scale=True)
         return
 
     def update_pre(self):
@@ -185,11 +184,9 @@ class Syphilis(ss.Infection):
         ti = self.sim.ti
         dt = self.sim.dt
 
-        # Primary
-        primary = self.exposed & (self.ti_primary <= ti)
-        self.primary[primary] = True
-        self.exposed[primary] = False
-        self.rel_trans[self.primary] = self.pars.rel_trans_primary
+        # Reset susceptibility and infectiousness
+        self.rel_sus[:] = 1
+        self.rel_trans[:] = 1
 
         # Secondary from primary
         secondary_from_primary = self.primary & (self.ti_secondary <= ti)
@@ -249,9 +246,10 @@ class Syphilis(ss.Infection):
     def update_results(self):
         super().update_results()
         ti = self.sim.ti
-        self.results.new_nnds[ti]       = np.count_nonzero(self.ti_nnd == ti)
-        self.results.new_stillborns[ti] = np.count_nonzero(self.ti_stillborn == ti)
-        self.results.new_congenital[ti] = np.count_nonzero(self.ti_congenital == ti)
+        self.results['new_nnds'][ti]       = np.count_nonzero(self.ti_nnd == ti)
+        self.results['new_stillborns'][ti] = np.count_nonzero(self.ti_stillborn == ti)
+        self.results['new_congenital'][ti] = np.count_nonzero(self.ti_congenital == ti)
+        self.results['new_deaths'][ti]     = self.results['new_nnds'][ti] + self.results['new_stillborns'][ti]
         return
 
     def set_latent_trans(self):
@@ -273,15 +271,10 @@ class Syphilis(ss.Infection):
 
         self.susceptible[uids] = False
         self.ever_exposed[uids] = True
-        self.exposed[uids] = True
+        self.primary[uids] = True
         self.infected[uids] = True
-        self.ti_exposed[uids] = ti
+        self.ti_primary[uids] = ti
         self.ti_infected[uids] = ti
-
-        # Set future dates and probabilities
-        # Exposed to primary
-        dur_exposed = self.pars.dur_exposed.rvs(uids)
-        self.ti_primary[uids] = ti + rr(dur_exposed / dt)
 
         # Primary to secondary
         dur_primary = self.pars.dur_primary.rvs(uids)

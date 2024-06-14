@@ -378,7 +378,7 @@ class TimeSeries:
         return new
 
 
-def make_init_prev_fn(module, sim, uids):
+def make_init_prev_fn(module, sim, uids, active=False):
     """ Initialize prevalence by sex and risk group """
 
     if sc.isnumber(module.init_prev_data):
@@ -389,12 +389,15 @@ def make_init_prev_fn(module, sim, uids):
         init_prev = pd.Series(index=uids)
         df = module.init_prev_data
 
-        n_risk_groups = sim.networks.structuredsexual.pars.n_risk_groups
+        nw = sim.networks.structuredsexual
+        n_risk_groups = nw.pars.n_risk_groups
         for rg in range(n_risk_groups):
             for sex in ['female', 'male']:
                 for sw in [0, 1]:
                     thisdf = df.loc[(df.risk_group==rg) & (df.sex==sex) & (df.sw==sw)]
-                    conditions = (sim.people[sex] & (sim.networks.structuredsexual.risk_group==rg))
+                    conditions = sim.people[sex] & (nw.risk_group==rg)
+                    if active:
+                        conditions = conditions & nw.active(sim.people)
                     if sw:
                         if sex == 'female': conditions = conditions & sim.networks.structuredsexual.fsw
                         if sex == 'male':   conditions = conditions & sim.networks.structuredsexual.client

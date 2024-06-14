@@ -14,6 +14,8 @@ import sciris as sc
 import numpy as np
 import pandas as pd
 import stisim as sti
+import scipy.optimize as spo
+import scipy.spatial as spsp
 
 ss_float_ = ss.dtypes.float
 
@@ -72,7 +74,7 @@ class StructuredSexual(ss.SexualNetwork):
             f0_conc=ss.poisson(lam=0.0001),
             f1_conc=ss.poisson(lam=0.01),
             f2_conc=ss.poisson(lam=0.1),
-            m0_conc=ss.poisson(lam=0.01),
+            m0_conc=ss.poisson(lam=0.0001),
             m1_conc=ss.poisson(lam=0.2),
             m2_conc=ss.poisson(lam=0.5),
 
@@ -99,9 +101,10 @@ class StructuredSexual(ss.SexualNetwork):
             # Sex work parameters
             fsw_shares=ss.bernoulli(p=0.05),
             client_shares=ss.bernoulli(p=0.12),
-            sw_seeking_rate=0.5,  # Annual rate at which clients seek FSWs (0.5 = 1 new SW partner every 2 years)
+            sw_seeking_rate=12,  # Annual rate at which clients seek FSWs (12 = 1 new SW partner every month)
             sw_seeking_dist=ss.bernoulli(p=0.5),  # Placeholder value replaced by dt-adjusted sw_seeking_rate
             sw_beta=1,  # Replace with condom use
+            sw_intensity=ss.random(),  # At each time step, FSW may work with varying intensity
 
             # Distributions derived from parameters above - don't adjust
             age_diffs=ss.normal(loc=self.age_diff_fn_loc, scale=self.age_diff_fn_scale),
@@ -124,6 +127,7 @@ class StructuredSexual(ss.SexualNetwork):
         self.concurrency = ss.FloatArr('concurrency')   # Preferred number of concurrent partners
         self.partners = ss.FloatArr('partners', default=0)  # Actual number of concurrent partners
         self.lifetime_partners = ss.FloatArr('lifetime_partners', default=0)   # Lifetime total number of partners
+        self.sw_intensity = ss.FloatArr('sw_intensity')  # Intensity of sex work
 
         return
 
@@ -280,25 +284,32 @@ class StructuredSexual(ss.SexualNetwork):
         age_gaps = self.pars.age_diffs.rvs(f_looking)   # Sample the age differences
         desired_ages = ppl.age[f_looking] + age_gaps    # Desired ages of the male partners
 
-        # Sort the females according to the desired age of their partners
-        desired_age_idx = np.argsort(desired_ages)  # Array positions for sorting the desired ages
-        p2 = f_looking[desired_age_idx]      # Female UIDs sorted by age of their desired partner
-        sorted_desired_ages = desired_ages[desired_age_idx]      # Sorted desired ages
+        # # Sort the females according to the desired age of their partners
+        # desired_age_idx = np.argsort(desired_ages)  # Array positions for sorting the desired ages
+        # p2 = f_looking[desired_age_idx]      # Female UIDs sorted by age of their desired partner
+        # sorted_desired_ages = desired_ages[desired_age_idx]      # Sorted desired ages
 
         # Sort the males by age
         m_ages = ppl.age[m_eligible]            # Ages of eligible males
-        m_age_sidx = np.argsort(m_ages)         # Array positions for sorting the ages of males
-        sorted_m_uids = ss.uids(m_eligible.uids[m_age_sidx])  # Male UIDs sorted by age
-        sorted_m_ages = m_ages[m_age_sidx]   # Sort male ages
+        # m_age_sidx = np.argsort(m_ages)         # Array positions for sorting the ages of males
+        # sorted_m_uids = ss.uids(m_eligible.uids[m_age_sidx])  # Male UIDs sorted by age
+        # sorted_m_ages = m_ages[m_age_sidx]   # Sort male ages
 
         # Get matches
-        match_inds = abs(sorted_desired_ages[:, None] - sorted_m_ages[None, :]).argmin(axis=-1)
-        p1 = sorted_m_uids[match_inds]
+        # match_inds = abs(sorted_desired_ages[:, None] - sorted_m_ages[None, :]).argmin(axis=-1)
+        dist_mat = spsp.distance_matrix(m_ages[:,np.newaxis], desired_ages[:,np.newaxis])
+        ind_m, ind_f = spo.linear_sum_assignment(dist_mat)
+        p1 = m_eligible.uids[ind_m]
+        p2 = f_looking[ind_f]
+        # p1 = sorted_m_uids[match_inds]
 
-        self.partners[p1] += 1
-        self.partners[p2] += 1
-        self.lifetime_partners[p1] += 1
-        self.lifetime_partners[p2] += 1
+        unique_p1, counts_p1 = np.unique(p1, return_counts=True)
+        unique_p2, counts_p2 = np.unique(p2, return_counts=True)
+
+        self.partners[unique_p1] += counts_p1
+        self.partners[unique_p2] += counts_p2
+        self.lifetime_partners[unique_p1] += counts_p1
+        self.lifetime_partners[unique_p2] += counts_p2
 
         return p1, p2
 
@@ -374,19 +385,28 @@ class StructuredSexual(ss.SexualNetwork):
         # Find people eligible for a relationship
         active_fsw = self.active(ppl) & ppl.female & self.fsw
         active_clients = self.active(ppl) & ppl.male & self.client
+        self.sw_intensity[active_fsw.uids] = self.pars.sw_intensity.rvs(active_fsw.uids)
 
         # Find clients who will seek FSW
-        self.pars.sw_seeking_dist.pars.p = self.pars.sw_seeking_rate * dt
+        self.pars.sw_seeking_dist.pars.p = np.clip(self.pars.sw_seeking_rate * dt, 0, 1)
         m_looking = self.pars.sw_seeking_dist.filter(active_clients.uids)
 
         # Replace this with choice
-        if len(m_looking) > len(active_fsw.uids):  # Replace this - should assign an FSW to all potential clients
-            n_pairs = len(active_fsw.uids)
-            p2 = active_fsw.uids
-            p1 = m_looking[:n_pairs]
+        if len(m_looking) > len(active_fsw.uids):  # Assign a FSW to every client
+            n_pairs = len(m_looking)
+            n_repeats = (self.sw_intensity[active_fsw]*10).astype(int)+1
+            fsw_repeats = np.repeat(active_fsw.uids, n_repeats)
+            count_repeats = np.repeat(n_repeats, n_repeats)
+            weights = self.sw_intensity[fsw_repeats] / count_repeats
+            choices = np.argsort(-weights)[:n_pairs]
+            p2 = fsw_repeats[choices]
+            p1 = m_looking
+
         else:
             n_pairs = len(m_looking)
-            p2 = active_fsw.uids[:n_pairs]
+            weights = self.sw_intensity[active_fsw]
+            choices = np.argsort(-weights)[:n_pairs]
+            p2 = active_fsw.uids[choices]
             p1 = m_looking
 
         # Beta, acts, duration
@@ -395,8 +415,10 @@ class StructuredSexual(ss.SexualNetwork):
         acts = (self.pars.acts.rvs(p2) * dt).astype(int)  # Could alternatively set to 1 and adjust beta
         sw = np.full_like(p1, True, dtype=bool)
 
-        self.lifetime_partners[p1] += 1
-        self.lifetime_partners[p2] += 1
+        unique_p1, counts_p1 = np.unique(p1, return_counts=True)
+        unique_p2, counts_p2 = np.unique(p2, return_counts=True)
+        self.lifetime_partners[unique_p1] += counts_p1
+        self.lifetime_partners[unique_p2] += counts_p2
 
         return p1, p2, beta, dur, acts, sw, ppl.age[p1], ppl.age[p2]
 
