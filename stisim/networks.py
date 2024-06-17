@@ -374,9 +374,16 @@ class StructuredSexual(ss.SexualNetwork):
 
         self.append(p1=p1, p2=p2, beta=1-condoms, dur=dur, acts=acts, sw=sw, age_p1=age_p1, age_p2=age_p2)
 
+        # Check
+        if self.sim.people.female[p1].any() or self.sim.people.male[p2].any():
+            errormsg = 'Same-sex pairings should not be possible in this network'
+            raise ValueError(errormsg)
+
         # Get sex work values
         p1_sw, p2_sw, beta_sw, dur_sw, acts_sw, sw_sw, age_p1_sw, age_p2_sw = self.add_sex_work(ppl)
-        self.append(p1=p1_sw, p2=p1_sw, beta=beta_sw, dur=dur_sw, acts=acts_sw, sw=sw_sw, age_p1=age_p1_sw, age_p2=age_p2_sw)
+        self.append(p1=p1_sw, p2=p2_sw, beta=beta_sw, dur=dur_sw, acts=acts_sw, sw=sw_sw, age_p1=age_p1_sw, age_p2=age_p2_sw)
+
+        return
 
     def add_sex_work(self, ppl):
         """ Match sex workers to clients """
@@ -419,6 +426,11 @@ class StructuredSexual(ss.SexualNetwork):
         unique_p2, counts_p2 = np.unique(p2, return_counts=True)
         self.lifetime_partners[unique_p1] += counts_p1
         self.lifetime_partners[unique_p2] += counts_p2
+
+        # Check
+        if self.sim.people.female[p1].any() or self.sim.people.male[p2].any():
+            errormsg = 'Same-sex sex work pairings should not be possible within in this network'
+            raise ValueError(errormsg)
 
         return p1, p2, beta, dur, acts, sw, ppl.age[p1], ppl.age[p2]
 
