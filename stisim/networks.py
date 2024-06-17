@@ -107,9 +107,9 @@ class StructuredSexual(ss.SexualNetwork):
             sw_intensity=ss.random(),  # At each time step, FSW may work with varying intensity
 
             # Distributions derived from parameters above - don't adjust
-            age_diffs=ss.normal(loc=self.age_diff_fn_loc, scale=self.age_diff_fn_scale),
-            dur_stable=ss.lognorm_ex(loc=self.stable_loc, scale=self.stable_scale),
-            dur_casual=ss.lognorm_ex(loc=self.casual_loc, scale=self.casual_scale),
+            age_diffs=ss.normal(),
+            dur_stable=ss.lognorm_ex(),
+            dur_casual=ss.lognorm_ex(),
         )
 
         self.update_pars(pars=pars, **kwargs)
@@ -146,52 +146,15 @@ class StructuredSexual(ss.SexualNetwork):
                 dd[key]['val'] = thisdf.value.values
         return dd
 
-    @staticmethod
-    def get_age_risk_pars(module, sim, uids, par):
-        if uids is None:
-            return np.nan, np.nan
-
-        abins = module.pars.f_age_group_bins
-        loc = pd.Series(0., index=uids)
-        scale = pd.Series(1., index=uids)
-        for a_label, a_range in abins.items():
-            for rg in range(module.pars.n_risk_groups):
-                age_conds = (sim.people.age[uids] >= a_range[0]) & (sim.people.age[uids] < a_range[1])
-                f_el_bools = age_conds & (module.risk_group[uids] == rg) & sim.people.female[uids]
-                f_el_uids = ss.uids(f_el_bools)
-                f_el_uids = uids[f_el_bools.nonzero()[0]]  # FIX THIS
-                scale[f_el_uids] = module.pars[par][a_label][rg][1]
+    def get_age_risk_pars(self, uids, par):
+        loc = np.full(uids.shape, fill_value=np.nan, dtype=ss_float_)
+        scale = np.full(uids.shape, fill_value=np.nan, dtype=ss_float_)
+        for a_label, (age_lower, age_upper) in self.pars.f_age_group_bins.items():
+            for rg in range(self.pars.n_risk_groups):
+                in_risk_group = (self.sim.people.age[uids] >= age_lower) & (self.sim.people.age[uids] < age_upper) & (self.risk_group[uids] == rg)
+                loc[in_risk_group] = par[a_label][rg][0]
+                scale[in_risk_group] = par[a_label][rg][1]
         return loc, scale
-
-    @staticmethod
-    def age_diff_fn_loc(module, sim, uids, par='age_diff_pars'):
-        loc, _ = module.get_age_risk_pars(module, sim, uids, par)
-        return loc
-
-    @staticmethod
-    def age_diff_fn_scale(module, sim, uids, par='age_diff_pars'):
-        _, scale = module.get_age_risk_pars(module, sim, uids, par)
-        return scale
-
-    @staticmethod
-    def stable_loc(module, sim, uids, par='stable_dur_pars'):
-        loc, _ = module.get_age_risk_pars(module, sim, uids, par)
-        return loc
-
-    @staticmethod
-    def stable_scale(module, sim, uids, par='stable_dur_pars'):
-        _, scale = module.get_age_risk_pars(module, sim, uids, par)
-        return scale
-
-    @staticmethod
-    def casual_loc(module, sim, uids, par='casual_dur_pars'):
-        loc, _ = module.get_age_risk_pars(module, sim, uids, par)
-        return loc
-
-    @staticmethod
-    def casual_scale(module, sim, uids, par='casual_dur_pars'):
-        _, scale = module.get_age_risk_pars(module, sim, uids, par)
-        return scale
 
     def init_pre(self, sim):
         super().init_pre(sim)
@@ -281,6 +244,8 @@ class StructuredSexual(ss.SexualNetwork):
             raise NoPartnersFound()
 
         # Get mean age differences and desired ages
+        loc, scale = self.get_age_risk_pars(f_looking, self.pars.age_diff_pars)
+        self.pars.age_diffs.set(loc=loc, scale=scale)
         age_gaps = self.pars.age_diffs.rvs(f_looking)   # Sample the age differences
         desired_ages = ppl.age[f_looking] + age_gaps    # Desired ages of the male partners
 
@@ -359,10 +324,14 @@ class StructuredSexual(ss.SexualNetwork):
 
                 if stable_bools.any():
                     stable_p2 = matched_p2[stable_bools]
+                    loc, scale = self.get_age_risk_pars(stable_p2, self.pars.stable_dur_pars)
+                    self.pars.dur_stable.set(loc=loc, scale=scale)
                     dur[stable_p2] = np.round(self.pars.dur_stable.rvs(stable_p2))
 
                 if casual_bools.any():
                     casual_p2 = matched_p2[casual_bools]
+                    loc, scale = self.get_age_risk_pars(casual_p2, self.pars.casual_dur_pars)
+                    self.pars.dur_casual.set(loc=loc, scale=scale)
                     dur[casual_p2] = np.round(self.pars.dur_casual.rvs(casual_p2))
 
             # If there are any mismatched pairs, determine the probability they'll have a non-instantaneous partnership
@@ -370,6 +339,8 @@ class StructuredSexual(ss.SexualNetwork):
                 mismatched_p2 = p2[mismatched_risk]
                 casual_mismatch_bools = self.pars.p_casual_mismatch.rvs(mismatched_p2)
                 casual_mismatch_p2 = mismatched_p2[casual_mismatch_bools]
+                loc, scale = self.get_age_risk_pars(casual_mismatch_p2, self.pars.casual_dur_pars)
+                self.pars.dur_casual.set(loc=loc, scale=scale)
                 dur[casual_mismatch_p2] = np.round(self.pars.dur_casual.rvs(casual_mismatch_p2))
 
         self.append(p1=p1, p2=p2, beta=1-condoms, dur=dur, acts=acts, sw=sw, age_p1=age_p1, age_p2=age_p2)
