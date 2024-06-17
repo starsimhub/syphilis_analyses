@@ -374,9 +374,12 @@ class StructuredSexual(ss.SexualNetwork):
 
         self.append(p1=p1, p2=p2, beta=1-condoms, dur=dur, acts=acts, sw=sw, age_p1=age_p1, age_p2=age_p2)
 
-        # Check
+        # Checks
         if self.sim.people.female[p1].any() or self.sim.people.male[p2].any():
             errormsg = 'Same-sex pairings should not be possible in this network'
+            raise ValueError(errormsg)
+        if len(p1) != len(p2):
+            errormsg = 'Unequal lengths in edge list'
             raise ValueError(errormsg)
 
         # Get sex work values
@@ -403,7 +406,10 @@ class StructuredSexual(ss.SexualNetwork):
             n_pairs = len(m_looking)
             n_repeats = (self.sw_intensity[active_fsw]*10).astype(int)+1
             fsw_repeats = np.repeat(active_fsw.uids, n_repeats)
-            count_repeats = np.repeat(n_repeats, n_repeats)
+            while len(fsw_repeats) < len(m_looking):
+                fsw_repeats = np.repeat(fsw_repeats, 2)
+            unique_sw, counts_sw = np.unique(fsw_repeats, return_counts=True)
+            count_repeats = np.repeat(counts_sw, counts_sw)
             weights = self.sw_intensity[fsw_repeats] / count_repeats
             choices = np.argsort(-weights)[:n_pairs]
             p2 = fsw_repeats[choices]
@@ -430,6 +436,9 @@ class StructuredSexual(ss.SexualNetwork):
         # Check
         if self.sim.people.female[p1].any() or self.sim.people.male[p2].any():
             errormsg = 'Same-sex sex work pairings should not be possible within in this network'
+            raise ValueError(errormsg)
+        if len(p1) != len(p2):
+            errormsg = 'Unequal lengths in edge list'
             raise ValueError(errormsg)
 
         return p1, p2, beta, dur, acts, sw, ppl.age[p1], ppl.age[p2]
