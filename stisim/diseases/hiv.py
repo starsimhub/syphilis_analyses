@@ -191,7 +191,7 @@ class HIV(ss.Infection):
         falling_dur = falling_end - falling_start
         time_falling = self.sim.ti - self.ti_falling[uids]
         cd4_start = self.cd4_latent[uids]
-        cd4_end = 1  # To avoid divide by zero problems
+        cd4_end = 50  # To avoid divide by zero problems
         per_timestep_decline = sc.safedivide(cd4_start-cd4_end, falling_dur)
         cd4 = np.maximum(0, cd4_start - per_timestep_decline*time_falling)
         return cd4
@@ -208,7 +208,7 @@ class HIV(ss.Infection):
         post_art_dur = ti_zero - ti_stop_art
         time_post_art = self.sim.ti - ti_stop_art
         cd4_start = self.cd4_postart[uids]
-        cd4_end = 1  # To avoid divide by zero problems
+        cd4_end = 50  # To avoid divide by zero problems
         per_timestep_decline = (cd4_start-cd4_end)/post_art_dur
         cd4 = np.maximum(0, cd4_start - per_timestep_decline*time_post_art)
         return cd4

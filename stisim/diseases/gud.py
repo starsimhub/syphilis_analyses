@@ -7,7 +7,64 @@ import sciris as sc
 import starsim as ss
 import stisim as sti
 
-__all__ = ['GUD']
+__all__ = ['GUDPlaceholder', 'GUD']
+
+
+class GUDPlaceholder(ss.Disease):
+    # A simple placeholder module to use when testing connectors
+
+    def __init__(self, pars=None, **kwargs):
+        super().__init__(name='gud')
+
+        self.default_pars(
+            prevalence=0.1,  # Target prevalance. If None, no automatic infections will be applied
+        )
+        self.update_pars(pars, **kwargs)
+        self.add_states(
+            ss.BoolArr('symptomatic'), # Symptomatic
+            ss.FloatArr('ti_symptomatic'), # Time of active syphilis
+        )
+        self._prev_dist = ss.bernoulli(p=0)
+
+        return
+
+    def init_pre(self, sim):
+        super().init_pre(sim)
+        if not isinstance(self.pars.prevalence, sti.TimeSeries):
+            ts = sti.TimeSeries(assumption=self.pars.prevalence)
+        else:
+            ts = self.pars.prevalence
+        self._target_prevalence = ts.interpolate(sim.yearvec)
+
+    def set_prognoses(self, target_uids, source_uids=None):
+        self.symptomatic[target_uids] = True
+
+    def update_pre(self):
+        """
+        When using a connector to the syphilis module, this is not needed. The connector should update the syphilis-positive state.
+        """
+
+        if self.pars.prevalence is None:
+            return
+
+        sim = self.sim
+
+        # Get current prevalence
+        n_symptomatic = self.symptomatic.count()
+        prev = n_symptomatic/len(sim.people)
+        target = self._target_prevalence[sim.ti]
+        change = target-prev
+
+        if change > 0:
+            # Add a proportion of people that are not infected
+            uids = self.symptomatic.false()
+            self._prev_dist.set(p=change/(len(uids)/len(sim.people)))
+            self.symptomatic[self._prev_dist.filter(uids)] = True
+        elif change < 0:
+            uids = self.symptomatic.true()
+            self._prev_dist.set(p=-change/(len(uids)/len(sim.people)))
+            self.symptomatic[self._prev_dist.filter(uids)] = False
+
 
 
 class GUD(ss.Infection):

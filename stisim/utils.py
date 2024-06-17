@@ -378,16 +378,18 @@ class TimeSeries:
         return new
 
 
-def make_init_prev_fn(module, sim, uids, active=False):
+def make_init_prev_fn(module, sim, uids, data=None, active=False):
     """ Initialize prevalence by sex and risk group """
 
-    if sc.isnumber(module.init_prev_data):
-        init_prev = module.init_prev_data
+    if data is None: data = module.init_prev_data
 
-    elif isinstance(module.init_prev_data, pd.DataFrame):
+    if sc.isnumber(data):
+        init_prev = data
+
+    elif isinstance(data, pd.DataFrame):
 
         init_prev = pd.Series(index=uids)
-        df = module.init_prev_data
+        df = data
 
         nw = sim.networks.structuredsexual
         n_risk_groups = nw.pars.n_risk_groups
