@@ -8,18 +8,22 @@ import starsim as ss
 import stisim as sti
 import pandas as pd
 import numpy as np
-
+import pylab as pl
  
 def make_sim(n_agents=500, dt=1):
 
-    pregnancy = ss.Pregnancy(fertility_rate=10)
-    death = ss.Deaths(death_rate=10)
+    fertility_rates = {'fertility_rate': pd.read_csv('test_data/zimbabwe_asfr.csv')}
+    pregnancy = ss.Pregnancy(pars=fertility_rates)
+    death_rates = {'death_rate': pd.read_csv('test_data/zimbabwe_deaths.csv'), 'units': 1}
+    death = ss.Deaths(death_rates)
+    ppl = ss.People(n_agents, age_data=pd.read_csv('test_data/zimbabwe_age.csv'))
+
     sim = ss.Sim(
         dt=dt,
         start=1990,
         total_pop=9980999,
         n_years=35,
-        n_agents=n_agents,
+        people=ppl,
         demographics=[pregnancy, death],
     )
 
