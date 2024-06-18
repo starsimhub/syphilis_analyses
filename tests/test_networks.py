@@ -3,13 +3,21 @@ Test that the population size doesn't depend on the number of agents in the simu
 """
 
 # Imports
-import sciris as sc
+import sciris as sc 
 import starsim as ss
 import stisim as sti
 import pandas as pd
 import numpy as np
 import pylab as pl
- 
+
+
+class partner_count(ss.Analyzer):
+    def __init__(self):
+        return
+
+    def apply(self, sim):
+        return
+
 def make_sim(n_agents=500, dt=1):
 
     fertility_rates = {'fertility_rate': pd.read_csv('test_data/zimbabwe_asfr.csv')}
@@ -17,6 +25,7 @@ def make_sim(n_agents=500, dt=1):
     death_rates = {'death_rate': pd.read_csv('test_data/zimbabwe_deaths.csv'), 'units': 1}
     death = ss.Deaths(death_rates)
     ppl = ss.People(n_agents, age_data=pd.read_csv('test_data/zimbabwe_age.csv'))
+    sexual = sti.StructuredSexual()
 
     sim = ss.Sim(
         dt=dt,
@@ -24,6 +33,7 @@ def make_sim(n_agents=500, dt=1):
         total_pop=9980999,
         n_years=35,
         people=ppl,
+        networks=sexual,
         demographics=[pregnancy, death],
     )
 
@@ -33,17 +43,10 @@ def test_n_agents():
     sc.heading('Test pop sizes with varying n_agents')
     results = dict()
     sims = sc.autolist()
-    n_agent_list = [5e3, 10e3, 20e3]
-    for n_agents in n_agent_list:
-        sim = make_sim(n_agents=n_agents, dt=1)
+    for n_agents in [1e3, 5e3, 10e3]:
+        sim = make_sim(n_agents=500, dt=1/)
         sim.run()
-        results[n_agents] = sim.results.n_alive
         sims += sim
-
-    fig, ax = pl.subplots(1, 1)
-    for n_agents in n_agent_list:
-        ax.plot(sim.yearvec, results[n_agents], label=int(n_agents))
-    ax.legend()
 
     return sims
 
