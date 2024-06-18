@@ -32,12 +32,6 @@ class network_stats(ss.Analyzer):
             ss.Result(self.name, 'share_active', npts, dtype=float, scale=False),
             ss.Result(self.name, 'partners_f_mean', npts, dtype=float, scale=False),
             ss.Result(self.name, 'partners_m_mean', npts, dtype=float, scale=False),
-            # ss.Result(self.name, 'partners_f_median', npts, dtype=float, scale=False),
-            # ss.Result(self.name, 'partners_m_median', npts, dtype=float, scale=False),
-            # ss.Result(self.name, 'partners_f_lower', npts, dtype=float, scale=False),
-            # ss.Result(self.name, 'partners_m_lower', npts, dtype=float, scale=False),
-            # ss.Result(self.name, 'partners_f_upper', npts, dtype=float, scale=False),
-            # ss.Result(self.name, 'partners_m_upper', npts, dtype=float, scale=False),
         ]
         return
 

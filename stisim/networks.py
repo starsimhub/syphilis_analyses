@@ -162,6 +162,16 @@ class StructuredSexual(ss.SexualNetwork):
             if isinstance(self.condom_data, dict):
                 for rgtuple, valdict in self.condom_data.items():
                     self.condom_data[rgtuple]['simvals'] = sc.smoothinterp(sim.yearvec, valdict['year'], valdict['val'])
+        self.init_results()
+        return
+
+    def init_results(self):
+        npts = self.sim.npts
+        self.results += [
+            ss.Result(self.name, 'share_active', npts, dtype=float, scale=False),
+            ss.Result(self.name, 'partners_f_mean', npts, dtype=float, scale=False),
+            ss.Result(self.name, 'partners_m_mean', npts, dtype=float, scale=False),
+        ]
         return
 
     def init_post(self):
@@ -248,28 +258,11 @@ class StructuredSexual(ss.SexualNetwork):
         self.pars.age_diffs.set(loc=loc, scale=scale)
         age_gaps = self.pars.age_diffs.rvs(f_looking)   # Sample the age differences
         desired_ages = ppl.age[f_looking] + age_gaps    # Desired ages of the male partners
-
-        # # Sort the females according to the desired age of their partners
-        # desired_age_idx = np.argsort(desired_ages)  # Array positions for sorting the desired ages
-        # p2 = f_looking[desired_age_idx]      # Female UIDs sorted by age of their desired partner
-        # sorted_desired_ages = desired_ages[desired_age_idx]      # Sorted desired ages
-
-        # Sort the males by age
         m_ages = ppl.age[m_eligible]            # Ages of eligible males
-        # m_age_sidx = np.argsort(m_ages)         # Array positions for sorting the ages of males
-        # sorted_m_uids = ss.uids(m_eligible.uids[m_age_sidx])  # Male UIDs sorted by age
-        # sorted_m_ages = m_ages[m_age_sidx]   # Sort male ages
-
-        # Get matches
-        # match_inds = abs(sorted_desired_ages[:, None] - sorted_m_ages[None, :]).argmin(axis=-1)
         dist_mat = spsp.distance_matrix(m_ages[:,np.newaxis], desired_ages[:,np.newaxis])
-        try:
-            ind_m, ind_f = spo.linear_sum_assignment(dist_mat)
-        except:
-            print('hi')
+        ind_m, ind_f = spo.linear_sum_assignment(dist_mat)
         p1 = m_eligible.uids[ind_m]
         p2 = f_looking[ind_f]
-        # p1 = sorted_m_uids[match_inds]
 
         unique_p1, counts_p1 = np.unique(p1, return_counts=True)
         unique_p2, counts_p2 = np.unique(p2, return_counts=True)
@@ -439,9 +432,18 @@ class StructuredSexual(ss.SexualNetwork):
 
         return
 
+    def update_results(self):
+        ti = self.sim.ti
+        partners_active_m = self.partners[(self.sim.people.male & self.active(self.sim.people))]
+        partners_active_f = self.partners[(self.sim.people.female & self.active(self.sim.people))]
+        self.results.share_active[ti] = len(self.active(self.sim.people).uids)/len(self.sim.people)
+        self.results.partners_f_mean[ti] = np.mean(partners_active_f)
+        self.results.partners_m_mean[ti] = np.mean(partners_active_m)
+
     def update(self):
         self.end_pairs()
         self.set_network_states(upper_age=self.sim.dt)
         self.add_pairs()
+        self.update_results()
 
         return
