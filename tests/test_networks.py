@@ -106,6 +106,9 @@ def test_n_agents():
     axes[1].set_title('Mean partners - females')
     axes[2].set_title('Mean partners - males')
 
+    sc.figlayout()
+    pl.show()
+
     return sims
 
 
