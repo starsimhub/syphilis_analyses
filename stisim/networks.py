@@ -280,7 +280,6 @@ class StructuredSexual(ss.SexualNetwork):
         dt = self.sim.dt
 
         try:
-            print(f'Starting to match pairs, {self.sim.ti=}')
             p1, p2 = self.match_pairs(ppl)
         except NoPartnersFound:
             return
@@ -294,7 +293,6 @@ class StructuredSexual(ss.SexualNetwork):
         age_p2 = ppl.age[p2]
 
         # First figure out reduction in transmission through condom use
-        print(f'Starting to assign condoms, {self.sim.ti=}')
         if self.condom_data is not None:
             if isinstance(self.condom_data, dict):
                 for rgm in range(self.pars.n_risk_groups):
@@ -341,7 +339,6 @@ class StructuredSexual(ss.SexualNetwork):
                 self.pars.dur_casual.set(loc=loc, scale=scale)
                 dur[casual_mismatch_p2] = np.round(self.pars.dur_casual.rvs(casual_mismatch_p2))
 
-        print(f'Starting to append pairs, {self.sim.ti=}')
         self.append(p1=p1, p2=p2, beta=1-condoms, dur=dur, acts=acts, sw=sw, age_p1=age_p1, age_p2=age_p2)
 
         # Checks
@@ -353,7 +350,6 @@ class StructuredSexual(ss.SexualNetwork):
             raise ValueError(errormsg)
 
         # Get sex work values
-        print(f'Starting to add sex work, {self.sim.ti=}')
         p1_sw, p2_sw, beta_sw, dur_sw, acts_sw, sw_sw, age_p1_sw, age_p2_sw = self.add_sex_work(ppl)
         self.append(p1=p1_sw, p2=p2_sw, beta=beta_sw, dur=dur_sw, acts=acts_sw, sw=sw_sw, age_p1=age_p1_sw, age_p2=age_p2_sw)
 
@@ -448,8 +444,8 @@ class StructuredSexual(ss.SexualNetwork):
         partners_active_m = self.partners[(self.sim.people.male & self.active(self.sim.people))]
         partners_active_f = self.partners[(self.sim.people.female & self.active(self.sim.people))]
         self.results.share_active[ti] = len(self.active(self.sim.people).uids)/len(self.sim.people)
-        self.results.partners_f_mean[ti] = np.mean(partners_active_f)
-        self.results.partners_m_mean[ti] = np.mean(partners_active_m)
+        # self.results.partners_f_mean[ti] = np.mean(partners_active_f)
+        # self.results.partners_m_mean[ti] = np.mean(partners_active_m)
 
     def update(self):
         self.end_pairs()
