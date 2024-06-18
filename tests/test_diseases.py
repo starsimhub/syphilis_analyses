@@ -55,6 +55,7 @@ def test_syph_epi():
 
     return s0, s1
 
+
 def test_hiv_epi():
     sc.heading('Test epi dynamics of hiv')
 
@@ -62,7 +63,7 @@ def test_hiv_epi():
 
     # Define the parameters to vary
     par_effects = dict(
-        dur_acute=[1/12, 24/12],
+        # dur_acute=[1/12, 24/12],
         init_prev=[0.01, 0.1],
         beta=[0.05, 0.1]  # Beta for male to female transmission; opposite direction uses half this value
     )
@@ -106,3 +107,4 @@ if __name__ == '__main__':
     sc.options(interactive=False)
     # s1, s2 = test_syph_epi()
     s3, s4 = test_hiv_epi()
+    # sim = test_hiv_epi()

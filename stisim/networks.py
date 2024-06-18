@@ -259,7 +259,7 @@ class StructuredSexual(ss.SexualNetwork):
         age_gaps = self.pars.age_diffs.rvs(f_looking)   # Sample the age differences
         desired_ages = ppl.age[f_looking] + age_gaps    # Desired ages of the male partners
         m_ages = ppl.age[m_eligible]            # Ages of eligible males
-        dist_mat = spsp.distance_matrix(m_ages[:,np.newaxis], desired_ages[:,np.newaxis])
+        dist_mat = spsp.distance_matrix(m_ages[:, np.newaxis], desired_ages[:, np.newaxis])
         ind_m, ind_f = spo.linear_sum_assignment(dist_mat)
         p1 = m_eligible.uids[ind_m]
         p2 = f_looking[ind_f]
@@ -280,6 +280,7 @@ class StructuredSexual(ss.SexualNetwork):
         dt = self.sim.dt
 
         try:
+            print(f'Starting to match pairs, {self.sim.ti=}')
             p1, p2 = self.match_pairs(ppl)
         except NoPartnersFound:
             return
@@ -293,6 +294,7 @@ class StructuredSexual(ss.SexualNetwork):
         age_p2 = ppl.age[p2]
 
         # First figure out reduction in transmission through condom use
+        print(f'Starting to assign condoms, {self.sim.ti=}')
         if self.condom_data is not None:
             if isinstance(self.condom_data, dict):
                 for rgm in range(self.pars.n_risk_groups):
@@ -339,6 +341,7 @@ class StructuredSexual(ss.SexualNetwork):
                 self.pars.dur_casual.set(loc=loc, scale=scale)
                 dur[casual_mismatch_p2] = np.round(self.pars.dur_casual.rvs(casual_mismatch_p2))
 
+        print(f'Starting to append pairs, {self.sim.ti=}')
         self.append(p1=p1, p2=p2, beta=1-condoms, dur=dur, acts=acts, sw=sw, age_p1=age_p1, age_p2=age_p2)
 
         # Checks
@@ -350,6 +353,7 @@ class StructuredSexual(ss.SexualNetwork):
             raise ValueError(errormsg)
 
         # Get sex work values
+        print(f'Starting to add sex work, {self.sim.ti=}')
         p1_sw, p2_sw, beta_sw, dur_sw, acts_sw, sw_sw, age_p1_sw, age_p2_sw = self.add_sex_work(ppl)
         self.append(p1=p1_sw, p2=p2_sw, beta=beta_sw, dur=dur_sw, acts=acts_sw, sw=sw_sw, age_p1=age_p1_sw, age_p2=age_p2_sw)
 
@@ -368,19 +372,26 @@ class StructuredSexual(ss.SexualNetwork):
         self.pars.sw_seeking_dist.pars.p = np.clip(self.pars.sw_seeking_rate * dt, 0, 1)
         m_looking = self.pars.sw_seeking_dist.filter(active_clients.uids)
 
-        # Replace this with choice
-        if len(m_looking) > len(active_fsw.uids):  # Assign a FSW to every client
-            n_pairs = len(m_looking)
+        # Attempt to assign a sex worker to every client by repeat sampling the sex workers.
+        # FSW with higher work intensity will be sampled more frequently
+        if len(m_looking) > len(active_fsw.uids):
             n_repeats = (self.sw_intensity[active_fsw]*10).astype(int)+1
             fsw_repeats = np.repeat(active_fsw.uids, n_repeats)
-            while len(fsw_repeats) < len(m_looking):
-                fsw_repeats = np.repeat(fsw_repeats, 2)
-            unique_sw, counts_sw = np.unique(fsw_repeats, return_counts=True)
-            count_repeats = np.repeat(counts_sw, counts_sw)
-            weights = self.sw_intensity[fsw_repeats] / count_repeats
-            choices = np.argsort(-weights)[:n_pairs]
-            p2 = fsw_repeats[choices]
-            p1 = m_looking
+            if len(fsw_repeats) < len(m_looking):
+                fsw_repeats = np.repeat(fsw_repeats, 10)  # 10x the number of clients each sex worker can have
+
+            # Might still not have enough FSW, so form as many pairs as possible
+            n_pairs = min(len(fsw_repeats), len(m_looking))
+            if len(fsw_repeats) < len(m_looking):
+                p1 = m_looking[:n_pairs]
+                p2 = fsw_repeats
+            else:
+                unique_sw, counts_sw = np.unique(fsw_repeats, return_counts=True)
+                count_repeats = np.repeat(counts_sw, counts_sw)
+                weights = self.sw_intensity[fsw_repeats] / count_repeats
+                choices = np.argsort(-weights)[:n_pairs]
+                p2 = fsw_repeats[choices]
+                p1 = m_looking
 
         else:
             n_pairs = len(m_looking)
