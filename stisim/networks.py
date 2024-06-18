@@ -263,7 +263,10 @@ class StructuredSexual(ss.SexualNetwork):
         # Get matches
         # match_inds = abs(sorted_desired_ages[:, None] - sorted_m_ages[None, :]).argmin(axis=-1)
         dist_mat = spsp.distance_matrix(m_ages[:,np.newaxis], desired_ages[:,np.newaxis])
-        ind_m, ind_f = spo.linear_sum_assignment(dist_mat)
+        try:
+            ind_m, ind_f = spo.linear_sum_assignment(dist_mat)
+        except:
+            print('hi')
         p1 = m_eligible.uids[ind_m]
         p2 = f_looking[ind_f]
         # p1 = sorted_m_uids[match_inds]
