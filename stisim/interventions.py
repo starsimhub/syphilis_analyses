@@ -292,8 +292,7 @@ class VMMC(ss.Intervention):
 
     def init_post(self):
         super().init_post()
-        if self.eligibility is None:
-            self.eligibility = lambda sim: sim.people.male & ~self.circumcised
+        return
 
     def init_results(self):
         npts = self.sim.npts
@@ -322,8 +321,7 @@ class VMMC(ss.Intervention):
 
         if n_to_circ > 0:
             # Find who's eligible to circumcise
-            eligible_uids = self.check_eligibility(sim)  # Apply eligiblity
-            eligible_uids = eligible_uids[sim.people.male[eligible_uids]]  # Just double check we only have males
+            eligible_uids = (sim.people.male & ~self.circumcised).uids  # Apply eligiblity
             weights = self.willingness[eligible_uids]
             choices = np.argsort(-weights)[:n_to_circ]
             new_circs = eligible_uids[choices]
