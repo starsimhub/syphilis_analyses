@@ -46,7 +46,7 @@ class StructuredSexual(ss.SexualNetwork):
             # Settings - generally shouldn't be adjusted
             n_risk_groups=3,
             f_age_group_bins=dict(  # For separating women into age groups: teens, young women, adult women
-                teens=(10, 20),
+                teens=(0, 20),
                 young=(20, 25),
                 adult=(25, np.inf),
             ),
@@ -154,6 +154,9 @@ class StructuredSexual(ss.SexualNetwork):
                 in_risk_group = (self.sim.people.age[uids] >= age_lower) & (self.sim.people.age[uids] < age_upper) & (self.risk_group[uids] == rg)
                 loc[in_risk_group] = par[a_label][rg][0]
                 scale[in_risk_group] = par[a_label][rg][1]
+        if np.isnan(scale).any() or np.isnan(loc).any():
+            errormsg = 'Invalid entries for age difference preferences.'
+            raise ValueError(errormsg)
         return loc, scale
 
     def init_pre(self, sim):
