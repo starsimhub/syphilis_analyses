@@ -15,7 +15,7 @@ def test_hiv_sim(n_agents=500, dt=1):
 
     hiv = sti.HIV(
         beta={'structuredsexual': [0.05, 0.25], 'maternal': [0.05, 0.]},
-        init_prev=0.05,
+        init_prev=0.1,
     )
     pregnancy = ss.Pregnancy(fertility_rate=10)
     death = ss.Deaths(death_rate=10)
