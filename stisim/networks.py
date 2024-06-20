@@ -312,13 +312,13 @@ class StructuredSexual(ss.SexualNetwork):
                     uids = p2[stable_bool]
                     loc, scale = self.get_age_risk_pars(uids, self.pars.stable_dur_pars)
                     self.pars.dur_stable.set(loc=loc, scale=scale)
-                    dur[stable_bool] = np.round(self.pars.dur_stable.rvs(uids)) # nb. must use stable_bool on the LHS to support repeated edges. Todo: use different durations for each partnership for the same UID
+                    dur[stable_bool] = self.pars.dur_stable.rvs(uids) # nb. must use stable_bool on the LHS to support repeated edges. Todo: use different durations for each partnership for the same UID
 
                 if casual_bool.any():
                     uids = p2[casual_bool]
                     loc, scale = self.get_age_risk_pars(uids, self.pars.casual_dur_pars)
                     self.pars.dur_casual.set(loc=loc, scale=scale)
-                    dur[casual_bool] = np.round(self.pars.dur_casual.rvs(uids))
+                    dur[casual_bool] = self.pars.dur_casual.rvs(uids)
 
             # If there are any mismatched pairs, determine the probability they'll have a non-instantaneous partnership
             if mismatched_risk.any():
@@ -328,7 +328,7 @@ class StructuredSexual(ss.SexualNetwork):
                 uids = p2[casual_bool]
                 loc, scale = self.get_age_risk_pars(uids, self.pars.casual_dur_pars)
                 self.pars.dur_casual.set(loc=loc, scale=scale)
-                dur[casual_bool] = np.round(self.pars.dur_casual.rvs(uids))
+                dur[casual_bool] = self.pars.dur_casual.rvs(uids)
 
         self.append(p1=p1, p2=p2, beta=1-condoms, dur=dur, acts=acts, sw=sw, age_p1=age_p1, age_p2=age_p2)
 
