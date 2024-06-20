@@ -70,7 +70,7 @@ class HIV(ss.Infection):
         # Set initial prevalence
         self.init_prev_data = init_prev_data
         if init_prev_data is not None:
-            self.pars.init_prev = ss.bernoulli(sti.make_init_prev_fn)
+            self.pars.init_prev = ss.bernoulli(self.make_init_prev_fn)
 
         # States
         self.add_states(
@@ -108,6 +108,10 @@ class HIV(ss.Infection):
         )
 
         return
+
+    @staticmethod
+    def make_init_prev_fn(module, sim, uids):
+        return sti.make_init_prev_fn(module, sim, uids, active=True)
 
     @property
     def include_mtct(self): return 'pregnancy' in self.sim.demographics
