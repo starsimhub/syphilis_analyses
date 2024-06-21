@@ -78,7 +78,7 @@ def test_n_agents():
     partners_m_mean = dict()
     partners_f_mean = dict()
     sims = sc.autolist()
-    n_agent_list = [500, 1e3, 2e3]
+    n_agent_list = [10e3]
     for n_agents in n_agent_list:
         sim = make_sim(n_agents=n_agents, dt=1/12)
         sim.run()
