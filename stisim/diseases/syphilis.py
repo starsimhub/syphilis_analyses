@@ -71,6 +71,8 @@ class Syphilis(ss.Infection):
 
     def __init__(self, pars=None, init_prev_data=None, init_prev_latent_data=None, **kwargs):
         super().__init__()
+        self.requires = sti.StructuredSexual
+
         self.default_pars(
             # Adult syphilis natural history, all specified in years
             dur_primary = ss.lognorm_ex(mean=1.5/12, stdev=1/36),  # https://pubmed.ncbi.nlm.nih.gov/9101629/
@@ -84,6 +86,9 @@ class Syphilis(ss.Infection):
 
             # Transmission by stage
             beta=1.0,  # Placeholder
+            beta_m2f=None,
+            beta_f2m=None,
+            beta_m2c=None,
             rel_trans_primary=1,
             rel_trans_secondary=1,
             rel_trans_latent=0.1,  # Baseline level; this decays exponentially with duration of latent infection
@@ -131,10 +136,10 @@ class Syphilis(ss.Infection):
             ss.BoolArr('tertiary'),     # Includes complications (cardio/neuro/disfigurement)
             ss.BoolArr('immune'),       # After effective treatment people may acquire temp immunity
             ss.BoolArr('ever_exposed'), # Anyone ever exposed - stays true after treatment
-    
+
             # Congenital syphilis states
             ss.BoolArr('congenital'),
-    
+
             # Timestep of state changes
             ss.FloatArr('ti_primary'),
             ss.FloatArr('ti_secondary'),
@@ -177,6 +182,16 @@ class Syphilis(ss.Infection):
     def infectious(self):
         """ Infectious """
         return self.active | self.latent
+
+    def init_pre(self, sim):
+        super().init_pre(sim)
+        if self.pars.beta_m2f is not None:
+            self.pars.beta['structuredsexual'][0] *= self.pars.beta_m2f
+        if self.pars.beta_f2m is not None:
+            self.pars.beta['structuredsexual'][1] *= self.pars.beta_f2m
+        if self.pars.beta_m2c is not None:
+            self.pars.beta['maternal'][0] *= self.pars.beta_m2c
+        return
 
     def init_post(self):
         """ Make initial cases - TODO, figure out how to incorporate active syphilis here """
@@ -286,7 +301,7 @@ class Syphilis(ss.Infection):
         self.results['new_nnds'][ti]       = np.count_nonzero(self.ti_nnd == ti)
         self.results['new_stillborns'][ti] = np.count_nonzero(self.ti_stillborn == ti)
         self.results['new_congenital'][ti] = np.count_nonzero(self.ti_congenital == ti)
-        self.results['new_congenital_deaths'][ti] = self.results['new_nnds'][ti] + self.results['new_stillborns'][ti]
+        self.results['new_congenital_deaths'][ti] = self.results['new_nnds'][ti]  # + self.results['new_stillborns'][ti]
         self.results['new_deaths'][ti] = np.count_nonzero(self.ti_dead == ti)
         return
 
