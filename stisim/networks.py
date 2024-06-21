@@ -79,11 +79,10 @@ class StructuredSexual(ss.SexualNetwork):
             m2_conc=ss.poisson(lam=0.5),
 
             # Relationship initiation, stability, and duration
-            p_pair_form=ss.bernoulli(p=0.5),  # Probability of a pair forming between two matched people
-            p_stable0=ss.bernoulli(p=0.9),
-            p_stable1=ss.bernoulli(p=0.5),
-            p_stable2=ss.bernoulli(p=0),
-            p_casual_mismatch=ss.bernoulli(p=0.5),  # Probability of a casual pair forming between mismatched people
+            p_pair_form=ss.bernoulli(p=0.5),  # Probability of a (stable) pair forming between two matched people
+            p_matched_stable = [ss.bernoulli(p=0.9),ss.bernoulli(p=0.5),ss.bernoulli(p=0)],  # Probability of a stable pair forming between matched people (otherwise casual)
+            p_mismatched_casual = [ss.bernoulli(p=0.5),ss.bernoulli(p=0.5),ss.bernoulli(p=0.5)],  # Probability of a casual pair forming between mismatched people (otherwise instantanous)
+
             stable_dur_pars=dict(
                 teens=[(100, 1),  (8, 2), (1e-4, 1e-4)],  # (mu,stdev) for levels 0, 1, 2
                 young=[(100, 1), (10, 3), (1e-4, 1e-4)],
@@ -267,14 +266,6 @@ class StructuredSexual(ss.SexualNetwork):
         p1 = m_eligible.uids[ind_m]
         p2 = f_looking[ind_f]
 
-        unique_p1, counts_p1 = np.unique(p1, return_counts=True)
-        unique_p2, counts_p2 = np.unique(p2, return_counts=True)
-
-        self.partners[unique_p1] += counts_p1
-        self.partners[unique_p2] += counts_p2
-        self.lifetime_partners[unique_p1] += counts_p1
-        self.lifetime_partners[unique_p2] += counts_p2
-
         return p1, p2
 
     def add_pairs(self, ti=None):
@@ -282,14 +273,15 @@ class StructuredSexual(ss.SexualNetwork):
         ppl = self.sim.people
         dt = self.sim.dt
 
+        # Obtain new pairs
         try:
             p1, p2 = self.match_pairs(ppl)
         except NoPartnersFound:
             return
 
         # Initialize beta, acts, duration
-        condoms = pd.Series(0., index=p2)
-        dur = pd.Series(dt, index=p2)  # Default duration is dt, replaced for stable matches
+        condoms = np.zeros(len(p2), dtype=ss_float_)
+        dur = np.full(len(p2), dtype=ss_float_, fill_value=dt) # Default duration is dt, replaced for stable matches
         acts = (self.pars.acts.rvs(p2) * dt).astype(int)  # Number of acts does not depend on commitment/risk group
         sw = np.full_like(p1, False, dtype=bool)
         age_p1 = ppl.age[p1]
@@ -303,44 +295,43 @@ class StructuredSexual(ss.SexualNetwork):
                         risk_pairing = (self.risk_group[p1] == rgm) & (self.risk_group[p2] == rgf)
                         condoms[risk_pairing] = self.condom_data[(rgm, rgf)]['simvals'][self.sim.ti]
             elif sc.isnumber(self.condom_data):
-                condoms[p2] = self.condom_data
+                condoms[:] = self.condom_data
+            else:
+                raise Exception("Unknown condom data input type")
 
         # If both partners are in the same risk group, determine the probability they'll commit
         for rg in range(self.pars.n_risk_groups):
             matched_risk = (self.risk_group[p1] == rg) & (self.risk_group[p2] == rg)
-            mismatched_risk = (
-                ((self.risk_group[p1] == rg) & (self.risk_group[p2] != rg)) |
-                ((self.risk_group[p2] == rg) & (self.risk_group[p1] != rg))
-            )
+            mismatched_risk = (self.risk_group[p1] == rg) & (self.risk_group[p2] != rg)
 
-            # If there are any matched pairs, check if they commit
+            # For matched pairs, there is a probability of forming a stable pair, and failing that, forming a casual pair
             if matched_risk.any():
+                stable_dist = self.pars.p_matched_stable[rg]  # To do: let p vary by age
+                stable = stable_dist.rvs(p2)
+                stable_bool = stable & matched_risk
+                casual_bool = ~stable & matched_risk
 
-                matched_p2 = p2[matched_risk]
-                stable_dist = self.pars[f'p_stable{rg}']   # To do: let p vary by age
-                stable_bools = stable_dist.rvs(matched_p2)
-                casual_bools = ~stable_bools
-
-                if stable_bools.any():
-                    stable_p2 = matched_p2[stable_bools]
-                    loc, scale = self.get_age_risk_pars(stable_p2, self.pars.stable_dur_pars)
+                if stable_bool.any():
+                    uids = p2[stable_bool]
+                    loc, scale = self.get_age_risk_pars(uids, self.pars.stable_dur_pars)
                     self.pars.dur_stable.set(loc=loc, scale=scale)
-                    dur[stable_p2] = np.round(self.pars.dur_stable.rvs(stable_p2))
+                    dur[stable_bool] = self.pars.dur_stable.rvs(uids) # nb. must use stable_bool on the LHS to support repeated edges. Todo: use different durations for each partnership for the same UID
 
-                if casual_bools.any():
-                    casual_p2 = matched_p2[casual_bools]
-                    loc, scale = self.get_age_risk_pars(casual_p2, self.pars.casual_dur_pars)
+                if casual_bool.any():
+                    uids = p2[casual_bool]
+                    loc, scale = self.get_age_risk_pars(uids, self.pars.casual_dur_pars)
                     self.pars.dur_casual.set(loc=loc, scale=scale)
-                    dur[casual_p2] = np.round(self.pars.dur_casual.rvs(casual_p2))
+                    dur[casual_bool] = self.pars.dur_casual.rvs(uids)
 
             # If there are any mismatched pairs, determine the probability they'll have a non-instantaneous partnership
             if mismatched_risk.any():
-                mismatched_p2 = p2[mismatched_risk]
-                casual_mismatch_bools = self.pars.p_casual_mismatch.rvs(mismatched_p2)
-                casual_mismatch_p2 = mismatched_p2[casual_mismatch_bools]
-                loc, scale = self.get_age_risk_pars(casual_mismatch_p2, self.pars.casual_dur_pars)
+                casual_dist = self.pars.p_mismatched_casual[rg]  # To do: let p vary by age
+                casual = casual_dist.rvs(p2)
+                casual_bool = casual & mismatched_risk
+                uids = p2[casual_bool]
+                loc, scale = self.get_age_risk_pars(uids, self.pars.casual_dur_pars)
                 self.pars.dur_casual.set(loc=loc, scale=scale)
-                dur[casual_mismatch_p2] = np.round(self.pars.dur_casual.rvs(casual_mismatch_p2))
+                dur[casual_bool] = self.pars.dur_casual.rvs(uids)
 
         self.append(p1=p1, p2=p2, beta=1-condoms, dur=dur, acts=acts, sw=sw, age_p1=age_p1, age_p2=age_p2)
 
@@ -354,7 +345,16 @@ class StructuredSexual(ss.SexualNetwork):
 
         # Get sex work values
         p1_sw, p2_sw, beta_sw, dur_sw, acts_sw, sw_sw, age_p1_sw, age_p2_sw = self.add_sex_work(ppl)
+
+        # Finalize adding the edges to the network
         self.append(p1=p1_sw, p2=p2_sw, beta=beta_sw, dur=dur_sw, acts=acts_sw, sw=sw_sw, age_p1=age_p1_sw, age_p2=age_p2_sw)
+
+        unique_p1, counts_p1 = np.unique(p1, return_counts=True)
+        unique_p2, counts_p2 = np.unique(p2, return_counts=True)
+        self.partners[unique_p1] += counts_p1
+        self.partners[unique_p2] += counts_p2
+        self.lifetime_partners[unique_p1] += counts_p1
+        self.lifetime_partners[unique_p2] += counts_p2
 
         return
 
