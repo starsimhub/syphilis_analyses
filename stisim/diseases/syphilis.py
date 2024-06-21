@@ -310,6 +310,7 @@ class Syphilis(ss.Infection):
     def finalize_results(self):
         self.results['cum_congenital'] = np.cumsum(self.results['new_congenital'])
         self.results['cum_congenital_deaths'] = np.cumsum(self.results['new_congenital_deaths'])
+        super().finalize_results()
         return
 
     def set_latent_trans(self, ti=None):
