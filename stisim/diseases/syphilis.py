@@ -281,8 +281,8 @@ class Syphilis(ss.Infection):
         self.susceptible[congenital] = False
 
         # Set rel_trans
-        self.rel_trans[self.secondary] = self.pars.rel_trans_secondary
         self.rel_trans[self.primary] = self.pars.rel_trans_primary
+        self.rel_trans[self.secondary] = self.pars.rel_trans_secondary
         self.rel_trans[self.tertiary] = self.pars.rel_trans_tertiary
         # Latent rel_trans decays with duration of latent infection
         if len(self.latent.uids) > 0:
