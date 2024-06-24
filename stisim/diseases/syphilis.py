@@ -221,6 +221,8 @@ class Syphilis(ss.Infection):
         self.results += ss.Result(self.name, 'new_stillborns',  npts, dtype=int, scale=True)
         self.results += ss.Result(self.name, 'new_congenital',  npts, dtype=int, scale=True)
         self.results += ss.Result(self.name, 'new_congenital_deaths', npts, dtype=int, scale=True)
+        self.results += ss.Result(self.name, 'cum_congenital',  npts, dtype=int, scale=True)
+        self.results += ss.Result(self.name, 'cum_congenital_deaths', npts, dtype=int, scale=True)
         self.results += ss.Result(self.name, 'new_deaths', npts, dtype=int, scale=True)
         return
 
@@ -303,6 +305,12 @@ class Syphilis(ss.Infection):
         self.results['new_congenital'][ti] = np.count_nonzero(self.ti_congenital == ti)
         self.results['new_congenital_deaths'][ti] = self.results['new_nnds'][ti]  # + self.results['new_stillborns'][ti]
         self.results['new_deaths'][ti] = np.count_nonzero(self.ti_dead == ti)
+        return
+
+    def finalize_results(self):
+        self.results['cum_congenital'] = np.cumsum(self.results['new_congenital'])
+        self.results['cum_congenital_deaths'] = np.cumsum(self.results['new_congenital_deaths'])
+        super().finalize_results()
         return
 
     def set_latent_trans(self, ti=None):
