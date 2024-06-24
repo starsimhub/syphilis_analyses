@@ -7,9 +7,10 @@ import numpy as np
 import pandas as pd
 from collections import defaultdict
 import sciris as sc
+import functools
+import itertools
 
-
-__all__ = ['HIVTest', 'ART', 'VMMC']
+__all__ = ['HIVTest', 'ART', 'VMMC', "PartnerNotification"]
 
 
 class HIVTest(ss.Intervention):
@@ -336,4 +337,58 @@ class VMMC(ss.Intervention):
         sim.diseases.hiv.rel_sus[self.circumcised] *= 1-self.pars.eff_circ
 
         return
+
+
+
+
+class PartnerNotification(ss.Intervention):
+
+    def __init__(self, disease, eligible, test, test_prob=0.5, **kwargs):
+        """
+
+        :param disease: The disease module from which to draw the transmission tree used to find contacts
+        :param eligible: A function `f(sim)` that returns the UIDs/BoolArr of people to trace (typically people who just tested positive)
+        :param test: The testing intervention to use when testing identified contacts
+        :param test_prob: The probability of a contact being identified and accepting a test
+        :param kwargs: Other arguments passed to ``ss.Intervention``
+        """
+        super().__init__(**kwargs)
+        self.disease = disease
+        self.eligible = eligible
+        self.test = test
+        self.test_prob = ss.bernoulli(test_prob)
+
+    def identify_contacts(self, sim, uids):
+        # Return UIDs of people that have been identified as contacts and should be notified
+
+        if len(uids) == 0:
+            return ss.uids()
+
+        # Find current contacts
+        contacts = sim.networks['structuredsexual'].find_contacts(uids, as_array=False) # Current contacts
+
+        # Find historical contacts
+        log = sim.diseases[self.disease].log
+        for source, _, network in log.in_edges(uids, data="network"):
+            if network == 'structuredsexual':
+                contacts.add(source) # Add the infecting agents
+
+        for _, target, network in log.out_edges(uids, data="network"):
+            if network == 'structuredsexual':
+                contacts.add(target)  # Add infected agents
+
+        # Filter by test_prob and return UIDs
+        return self.test_prob.filter(ss.uids(contacts))
+
+
+    def notify(self, sim, uids):
+        # Schedule a test for identified contacts at the next timestep (this also ensures that contacts tracing will take place for partners that test positive)
+        # Could include a parameter here for acceptance of testing (if separating out probabilities of notification and testing)
+        # print(f'Scheduling {len(uids)} tests (of whom {(~sim.diseases.syphilis.susceptible[uids]).sum()} will be positive)')
+        return self.test.schedule(uids, sim.ti+1)
+
+    def apply(self, sim):
+        uids = self.eligible(sim)
+        uids = self.identify_contacts(sim, uids)
+        return self.notify(sim, uids)
 
