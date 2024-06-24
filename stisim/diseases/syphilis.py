@@ -323,6 +323,15 @@ class Syphilis(ss.Infection):
         self.rel_trans[self.latent] = latent_trans
         return
 
+    def make_new_cases(self):
+        """
+        Add new syphilis cases
+        """
+        targets, sources, networks = super().make_new_cases()
+        for source, target, network in zip(sources, targets, networks):
+            self.log.append(source, target, t=self.sim.year, network=self.sim.networks[network].name)
+        return sources, targets, networks
+
     def set_prognoses(self, uids, source_uids=None, ti=None):
         """
         Set initial prognoses for adults newly infected with syphilis
