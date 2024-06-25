@@ -13,14 +13,13 @@ import starsim as ss
 import sciris as sc
 import numpy as np
 import pandas as pd
-import stisim as sti
 import scipy.optimize as spo
 import scipy.spatial as spsp
 
 ss_float_ = ss.dtypes.float
 
 # Specify all externally visible functions this file defines; see also more definitions below
-__all__ = ['StructuredSexual']
+__all__ = ['StructuredSexual', 'FastStructuredSexual']
 
 class NoPartnersFound(Exception):
     # Raise this exception if the matching algorithm wasn't able to match any partners
@@ -457,3 +456,38 @@ class StructuredSexual(ss.SexualNetwork):
         self.update_results()
 
         return
+
+
+class FastStructuredSexual(StructuredSexual):
+
+    def match_pairs(self, ppl):
+        """
+        Match pairs by age, using sorting rather than the linear sum assignment
+        """
+
+        # Find people eligible for a relationship
+        f_active = self.active(ppl) & ppl.female
+        m_active = self.active(ppl) & ppl.male
+        underpartnered = self.partners < self.concurrency
+        f_eligible = f_active & underpartnered
+        m_eligible = m_active & underpartnered
+        f_looking = self.pars.p_pair_form.filter(f_eligible.uids)  # ss.uids of women looking for partners
+
+        if len(f_looking) == 0 or m_eligible.count() == 0:
+            raise NoPartnersFound()
+
+        # Get mean age differences and desired ages
+        loc, scale = self.get_age_risk_pars(f_looking, self.pars.age_diff_pars)
+        self.pars.age_diffs.set(loc=loc, scale=scale)
+        age_gaps = self.pars.age_diffs.rvs(f_looking)   # Sample the age differences
+        desired_ages = ppl.age[f_looking] + age_gaps    # Desired ages of the male partners
+        m_ages = ppl.age[m_eligible]            # Ages of eligible males
+        ind_m = np.argsort(m_ages) # Use sort instead of linear_sum_agreement
+        ind_f = np.argsort(desired_ages)
+        p1 = m_eligible.uids[ind_m]
+        p2 = f_looking[ind_f]
+        maxlen = min(len(p1), len(p2))
+        p1 = p1[:maxlen]
+        p2 = p2[:maxlen]
+
+        return p1, p2
